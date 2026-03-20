@@ -13,6 +13,22 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 
+<script>
+// Detecção instantânea de modo público — roda ANTES de qualquer JS externo
+(function(){
+  var mode = new URLSearchParams(window.location.search).get('mode');
+  if(mode === 'formepi' || mode === 'formferias') {
+    // Injeta CSS de emergência para esconder tudo imediatamente
+    var s = document.createElement('style');
+    s.textContent = '.app-header,.memory-bar,.tab-bar,.container,#loginOverlay,#btnExitTV,#errorBar,#loading{display:none!important}'
+                  + ' body{background:#f0f2f5!important; overflow:auto!important}'
+                  + ' #publicFormWrapper{display:block!important}';
+    document.head.appendChild(s);
+    // Marca no sessionStorage para os scripts saberem
+    try{ sessionStorage.setItem('sys_mode', mode); }catch(e){}
+  }
+})();
+</script>
 <link rel="stylesheet" href="estilos.css">
 
 <style>
@@ -83,33 +99,16 @@
 
 /* ===== UNIFORME & EPI ===== */
 .epi-field-row{display:flex;align-items:center;padding:9px 0;border-bottom:1px solid #e8daef;gap:10px;flex-wrap:wrap;}
-.epi-field-label{font-size:12px;font-weight:800;color:#6c3483;min-width:80px;display:flex;align-items:center;gap:5px;flex-shrink:0;}
-.epi-size-group{display:flex;flex-wrap:wrap;gap:5px;}
-.epi-sz-btn{padding:5px 10px;border:2px solid #d7bde2;border-radius:7px;background:white;color:#6c3483;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;}
-.epi-sz-btn:hover{background:#e8daef;border-color:#8e44ad;}
-.epi-sz-btn.selected{background:#8e44ad;color:white;border-color:#6c3483;box-shadow:0 2px 6px rgba(142,68,173,.35);transform:scale(1.05);}
+.epi-field-label{font-size:13px;font-weight:800;color:#6c3483;min-width:85px;display:flex;align-items:center;gap:6px;flex-shrink:0;}
+.epi-size-group{display:flex;flex-wrap:wrap;gap:6px;}
+.epi-sz-btn{padding:7px 12px;border:2px solid #d7bde2;border-radius:8px;background:white;color:#6c3483;font-size:13px;font-weight:700;cursor:pointer;transition:all .15s;-webkit-tap-highlight-color:transparent;touch-action:manipulation;}
+.epi-sz-btn:hover,.epi-sz-btn:active{background:#e8daef;border-color:#8e44ad;}
+.epi-sz-btn.selected{background:#8e44ad;color:white;border-color:#6c3483;box-shadow:0 2px 8px rgba(142,68,173,.4);}
 .epi-inbox-item{display:flex;justify-content:space-between;align-items:center;padding:12px 15px;border-bottom:1px solid #f0e6ff;flex-wrap:wrap;gap:8px;}
 .epi-inbox-item:hover{background:#fdf6ff;}
 .epi-inbox-name{font-size:13px;font-weight:800;color:#2c3e50;}
 .epi-inbox-sizes{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;}
 .epi-sz-tag{background:#f0eafb;color:#6c3483;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700;}
-#epiOverlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.65);z-index:9999990;justify-content:center;align-items:flex-start;overflow-y:auto;padding:20px;box-sizing:border-box;}
-/* Página pública EPI standalone */
-#epiPublicPage{display:none;min-height:100vh;align-items:flex-start;justify-content:center;padding:20px;box-sizing:border-box;background:#f0f2f5;}
-.epi-pub-card{max-width:520px;width:100%;background:white;border-radius:14px;box-shadow:0 4px 24px rgba(0,0,0,.12);overflow:hidden;}
-.epi-pub-header{background:linear-gradient(135deg,#8e44ad,#6c3483);padding:22px 20px;color:white;text-align:center;}
-.epi-pub-header h2{margin:0;font-size:20px;}
-.epi-pub-header p{margin:5px 0 0;font-size:13px;opacity:.9;}
-.epi-pub-body{padding:20px;}
-.epi-pub-select{width:100%;padding:12px;border:2px solid #d7bde2;border-radius:8px;font-size:15px;font-weight:600;color:#2c3e50;background:white;cursor:pointer;box-sizing:border-box;margin-top:5px;}
-.epi-pub-select:focus{outline:none;border-color:#8e44ad;}
-.epi-pub-field-lbl{display:block;font-weight:800;font-size:12px;color:#6c3483;margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px;}
-.epi-pub-send-btn{width:100%;padding:14px;background:linear-gradient(135deg,#8e44ad,#6c3483);color:white;border:none;border-radius:8px;font-size:15px;font-weight:800;cursor:pointer;text-transform:uppercase;letter-spacing:.5px;margin-top:4px;}
-.epi-pub-send-btn:disabled{opacity:.6;cursor:not-allowed;}
-.epi-pub-vmsg{display:none;background:#fdedec;color:#c0392b;border-radius:6px;padding:9px;font-size:12px;font-weight:700;margin-bottom:10px;text-align:center;}
-.epi-pub-success{display:none;text-align:center;padding:50px 25px;}
-.epi-pub-success h2{color:#2c3e50;margin:10px 0 6px;}
-.epi-pub-success p{color:#777;font-size:14px;}
 </style>
 </head>
 <body>
@@ -164,143 +163,82 @@
             <button class="pf-btn" onclick="submitPublicForm()">Enviar Solicitação <i class="fas fa-paper-plane"></i></button>
         </div>
     </div>
-    <div class="pf-container pf-success" id="pf-success-view">
-        <i class="fas fa-check-circle"></i>
-        <h2 style="color:#2c3e50; margin:0;">Solicitação Enviada!</h2>
-        <p style="color:#777; margin-top:10px;">O seu pedido foi enviado para o sistema do seu supervisor. Pode fechar esta página.</p>
-    </div>
-</div>
 
-<!-- ============================================================
-     PÁGINA PÚBLICA EPI — só visível em ?mode=formepi
-     O sistema inteiro fica oculto; colaborador só vê isso
-============================================================ -->
-<div id="epiPublicPage">
-    <div class="epi-pub-card">
-        <!-- FORMULÁRIO -->
-        <div id="epiPub-form">
-            <div class="epi-pub-header">
-                <div style="font-size:40px;margin-bottom:6px;">&#129399;</div>
-                <h2><i class="fas fa-vest"></i> Uniforme &amp; EPI</h2>
-                <p>Selecione seu nome e seus tamanhos abaixo.</p>
+    <!-- EPI FORM — visível apenas em ?mode=formepi -->
+    <div class="pf-container" id="epi-pub-form" style="display:none;">
+        <div class="pf-header" style="background:linear-gradient(135deg,#8e44ad,#6c3483);">
+            <h2><i class="fas fa-vest"></i> Uniforme &amp; EPI</h2>
+            <p>Selecione seu nome e seus tamanhos abaixo.</p>
+        </div>
+        <div class="pf-body">
+            <div class="pf-group">
+                <label class="pf-label" style="color:#6c3483;"><i class="fas fa-user"></i> Selecione o seu Nome</label>
+                <select id="epi_sel" class="pf-input" style="border-color:#d7bde2;font-size:15px;padding:12px;">
+                    <option value="">&#9203; Carregando lista de colaboradores...</option>
+                </select>
             </div>
-            <div class="epi-pub-body">
-                <!-- Select de colaboradores -->
-                <div style="margin-bottom:16px;">
-                    <label class="epi-pub-field-lbl"><i class="fas fa-user"></i> Seu Nome</label>
-                    <select id="epiPub_select" class="epi-pub-select" onchange="epiPubSelectChange()">
-                        <option value="">&#9203; Carregando lista...</option>
-                    </select>
-                    <div id="epiPub_mat_display" style="margin-top:6px;font-size:11px;color:#888;font-weight:600;display:none;">
-                        Matricula: <span id="epiPub_mat_txt"></span>
-                    </div>
-                </div>
-
-                <!-- Tamanhos -->
-                <div style="background:#f9f5ff;border-radius:8px;padding:14px;margin-bottom:12px;">
-                    <p style="margin:0 0 12px;font-size:11px;font-weight:800;color:#8e44ad;text-transform:uppercase;"><i class="fas fa-vest"></i> Selecione seus tamanhos (toque para escolher)</p>
-
+            <div class="pf-group">
+                <div style="background:#f9f5ff;border-radius:8px;padding:14px;">
+                    <p style="margin:0 0 14px;font-size:12px;font-weight:800;color:#8e44ad;text-transform:uppercase;"><i class="fas fa-vest"></i> Toque para selecionar seus tamanhos</p>
                     <div class="epi-field-row">
                         <span class="epi-field-label"><i class="fas fa-tshirt"></i> Blusa</span>
-                        <div class="epi-size-group" id="pub_grp_blusa">
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('blusa','PP')">PP</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('blusa','P')">P</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('blusa','M')">M</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('blusa','G')">G</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('blusa','GG')">GG</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('blusa','XG')">XG</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('blusa','XXG')">XXG</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('blusa','XXXG')">XXXG</button>
+                        <div class="epi-size-group" id="epi_grp_blusa">
+                            <button type="button" class="epi-sz-btn" onclick="epiTog('blusa','PP')">PP</button><button type="button" class="epi-sz-btn" onclick="epiTog('blusa','P')">P</button><button type="button" class="epi-sz-btn" onclick="epiTog('blusa','M')">M</button><button type="button" class="epi-sz-btn" onclick="epiTog('blusa','G')">G</button><button type="button" class="epi-sz-btn" onclick="epiTog('blusa','GG')">GG</button><button type="button" class="epi-sz-btn" onclick="epiTog('blusa','XG')">XG</button><button type="button" class="epi-sz-btn" onclick="epiTog('blusa','XXG')">XXG</button><button type="button" class="epi-sz-btn" onclick="epiTog('blusa','XXXG')">XXXG</button>
                         </div>
                     </div>
                     <div class="epi-field-row">
                         <span class="epi-field-label"><i class="fas fa-male"></i> Calca</span>
-                        <div class="epi-size-group" id="pub_grp_calca">
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('calca','PP')">PP</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('calca','P')">P</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('calca','M')">M</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('calca','G')">G</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('calca','GG')">GG</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('calca','XG')">XG</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('calca','XXG')">XXG</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('calca','XXXG')">XXXG</button>
+                        <div class="epi-size-group" id="epi_grp_calca">
+                            <button type="button" class="epi-sz-btn" onclick="epiTog('calca','PP')">PP</button><button type="button" class="epi-sz-btn" onclick="epiTog('calca','P')">P</button><button type="button" class="epi-sz-btn" onclick="epiTog('calca','M')">M</button><button type="button" class="epi-sz-btn" onclick="epiTog('calca','G')">G</button><button type="button" class="epi-sz-btn" onclick="epiTog('calca','GG')">GG</button><button type="button" class="epi-sz-btn" onclick="epiTog('calca','XG')">XG</button><button type="button" class="epi-sz-btn" onclick="epiTog('calca','XXG')">XXG</button><button type="button" class="epi-sz-btn" onclick="epiTog('calca','XXXG')">XXXG</button>
                         </div>
                     </div>
                     <div class="epi-field-row">
                         <span class="epi-field-label"><i class="fas fa-cut"></i> Bermuda</span>
-                        <div class="epi-size-group" id="pub_grp_bermuda">
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('bermuda','36')">36</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('bermuda','38')">38</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('bermuda','40')">40</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('bermuda','42')">42</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('bermuda','44')">44</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('bermuda','46')">46</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('bermuda','48')">48</button>
+                        <div class="epi-size-group" id="epi_grp_bermuda">
+                            <button type="button" class="epi-sz-btn" onclick="epiTog('bermuda','36')">36</button><button type="button" class="epi-sz-btn" onclick="epiTog('bermuda','38')">38</button><button type="button" class="epi-sz-btn" onclick="epiTog('bermuda','40')">40</button><button type="button" class="epi-sz-btn" onclick="epiTog('bermuda','42')">42</button><button type="button" class="epi-sz-btn" onclick="epiTog('bermuda','44')">44</button><button type="button" class="epi-sz-btn" onclick="epiTog('bermuda','46')">46</button><button type="button" class="epi-sz-btn" onclick="epiTog('bermuda','48')">48</button>
                         </div>
                     </div>
                     <div class="epi-field-row">
                         <span class="epi-field-label"><i class="fas fa-mitten"></i> Casaco</span>
-                        <div class="epi-size-group" id="pub_grp_casaco">
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('casaco','PP')">PP</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('casaco','P')">P</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('casaco','M')">M</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('casaco','G')">G</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('casaco','GG')">GG</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('casaco','XG')">XG</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('casaco','XXG')">XXG</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('casaco','XXXG')">XXXG</button>
+                        <div class="epi-size-group" id="epi_grp_casaco">
+                            <button type="button" class="epi-sz-btn" onclick="epiTog('casaco','PP')">PP</button><button type="button" class="epi-sz-btn" onclick="epiTog('casaco','P')">P</button><button type="button" class="epi-sz-btn" onclick="epiTog('casaco','M')">M</button><button type="button" class="epi-sz-btn" onclick="epiTog('casaco','G')">G</button><button type="button" class="epi-sz-btn" onclick="epiTog('casaco','GG')">GG</button><button type="button" class="epi-sz-btn" onclick="epiTog('casaco','XG')">XG</button><button type="button" class="epi-sz-btn" onclick="epiTog('casaco','XXG')">XXG</button><button type="button" class="epi-sz-btn" onclick="epiTog('casaco','XXXG')">XXXG</button>
                         </div>
                     </div>
                     <div class="epi-field-row">
                         <span class="epi-field-label"><i class="fas fa-shoe-prints"></i> Bota</span>
-                        <div class="epi-size-group" id="pub_grp_bota">
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('bota','36')">36</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('bota','37')">37</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('bota','38')">38</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('bota','39')">39</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('bota','40')">40</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('bota','41')">41</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('bota','42')">42</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('bota','43')">43</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('bota','44')">44</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('bota','45')">45</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('bota','46')">46</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('bota','47')">47</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('bota','48')">48</button>
+                        <div class="epi-size-group" id="epi_grp_bota">
+                            <button type="button" class="epi-sz-btn" onclick="epiTog('bota','36')">36</button><button type="button" class="epi-sz-btn" onclick="epiTog('bota','37')">37</button><button type="button" class="epi-sz-btn" onclick="epiTog('bota','38')">38</button><button type="button" class="epi-sz-btn" onclick="epiTog('bota','39')">39</button><button type="button" class="epi-sz-btn" onclick="epiTog('bota','40')">40</button><button type="button" class="epi-sz-btn" onclick="epiTog('bota','41')">41</button><button type="button" class="epi-sz-btn" onclick="epiTog('bota','42')">42</button><button type="button" class="epi-sz-btn" onclick="epiTog('bota','43')">43</button><button type="button" class="epi-sz-btn" onclick="epiTog('bota','44')">44</button><button type="button" class="epi-sz-btn" onclick="epiTog('bota','45')">45</button><button type="button" class="epi-sz-btn" onclick="epiTog('bota','46')">46</button><button type="button" class="epi-sz-btn" onclick="epiTog('bota','47')">47</button><button type="button" class="epi-sz-btn" onclick="epiTog('bota','48')">48</button>
                         </div>
                     </div>
                     <div class="epi-field-row">
                         <span class="epi-field-label"><i class="fas fa-hand-paper"></i> Luva</span>
-                        <div class="epi-size-group" id="pub_grp_luva">
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('luva','P')">P</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('luva','M')">M</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('luva','G')">G</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('luva','GG')">GG</button>
+                        <div class="epi-size-group" id="epi_grp_luva">
+                            <button type="button" class="epi-sz-btn" onclick="epiTog('luva','P')">P</button><button type="button" class="epi-sz-btn" onclick="epiTog('luva','M')">M</button><button type="button" class="epi-sz-btn" onclick="epiTog('luva','G')">G</button><button type="button" class="epi-sz-btn" onclick="epiTog('luva','GG')">GG</button>
                         </div>
                     </div>
                     <div class="epi-field-row" style="border-bottom:none;">
                         <span class="epi-field-label"><i class="fas fa-life-ring"></i> Cinta</span>
-                        <div class="epi-size-group" id="pub_grp_cinta">
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('cinta','P')">P</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('cinta','M')">M</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('cinta','G')">G</button>
-                            <button type="button" class="epi-sz-btn" onclick="epiPubToggle('cinta','GG')">GG</button>
+                        <div class="epi-size-group" id="epi_grp_cinta">
+                            <button type="button" class="epi-sz-btn" onclick="epiTog('cinta','P')">P</button><button type="button" class="epi-sz-btn" onclick="epiTog('cinta','M')">M</button><button type="button" class="epi-sz-btn" onclick="epiTog('cinta','G')">G</button><button type="button" class="epi-sz-btn" onclick="epiTog('cinta','GG')">GG</button>
                         </div>
                     </div>
                 </div>
-
-                <div id="epiPub-vmsg" class="epi-pub-vmsg"></div>
-                <button type="button" id="epiPub-submit-btn" class="epi-pub-send-btn" onclick="submitEpiPublicForm()">
-                    <i class="fas fa-paper-plane"></i> Enviar Solicitacao
-                </button>
             </div>
+            <p id="epi-vmsg" style="display:none;background:#fdedec;color:#c0392b;border-radius:6px;padding:10px;font-size:13px;font-weight:700;text-align:center;margin:0 0 10px;"></p>
+            <button class="pf-btn" id="epi-sub-btn" onclick="submitEpiPublicForm()" style="background:linear-gradient(135deg,#8e44ad,#6c3483);">
+                Enviar Solicitacao <i class="fas fa-paper-plane"></i>
+            </button>
         </div>
-        <!-- SUCESSO -->
-        <div id="epiPub-success" class="epi-pub-success">
-            <div style="font-size:64px;margin-bottom:10px;">&#9989;</div>
-            <h2>Solicitacao Enviada!</h2>
-            <p>Seus tamanhos foram registados e enviados ao supervisor.<br>Pode fechar esta pagina.</p>
-        </div>
+    </div>
+    <div class="pf-container pf-success" id="epi-ok-view" style="display:none;">
+        <i class="fas fa-check-circle" style="font-size:60px;color:#8e44ad;display:block;text-align:center;margin-bottom:15px;"></i>
+        <h2 style="color:#2c3e50;margin:0;text-align:center;">Solicitacao Enviada!</h2>
+        <p style="color:#777;margin-top:10px;text-align:center;">Os seus tamanhos foram enviados ao supervisor.<br>Pode fechar esta pagina.</p>
+    </div>
+    <div class="pf-container pf-success" id="pf-success-view">
+        <i class="fas fa-check-circle"></i>
+        <h2 style="color:#2c3e50; margin:0;">Solicitação Enviada!</h2>
+        <p style="color:#777; margin-top:10px;">O seu pedido foi enviado para o sistema do seu supervisor. Pode fechar esta página.</p>
     </div>
 </div>
 
@@ -598,18 +536,18 @@
             </div>
         </div>
 
-        <!-- UNIFORME & EPI -->
+        <!-- UNIFORME & EPI — PAINEL SUPERVISOR -->
         <div id="view-rh-uniforme" class="view-section">
             <div class="scroll-content">
                 <div class="card" style="border-left:5px solid #8e44ad;background:linear-gradient(135deg,#f9f5ff,#fff);margin-bottom:14px;">
                     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
                         <div>
                             <h3 style="margin:0;color:#8e44ad;"><i class="fas fa-vest"></i> Controlo de Uniforme &amp; EPI</h3>
-                            <p style="font-size:12px;color:#666;margin:4px 0 0;">Partilhe o link via WhatsApp — o colaborador so ve o formulario.</p>
+                            <p style="font-size:12px;color:#666;margin:4px 0 0;">Partilhe o link — colaborador so ve o formulario, sem senha.</p>
                         </div>
                         <div style="display:flex;gap:10px;flex-wrap:wrap;">
                             <button class="btn" style="background:#25d366;color:white;" onclick="copyEpiFormLink()"><i class="fab fa-whatsapp"></i> LINK P/ WHATSAPP</button>
-                            <button class="btn btn-blue" onclick="abrirFormEpiLocal()"><i class="fas fa-eye"></i> PREVIEW FORMULARIO</button>
+                            <button class="btn btn-blue" onclick="window.open(window.location.href.split('?')[0]+'?mode=formepi','_blank')"><i class="fas fa-external-link-alt"></i> TESTAR FORMULARIO</button>
                             <button class="btn btn-blue" onclick="renderEpiTab()"><i class="fas fa-sync-alt"></i> Atualizar</button>
                             <button class="btn btn-green" onclick="exportEpiExcel()"><i class="fas fa-file-excel"></i> Exportar Excel</button>
                         </div>
@@ -627,23 +565,15 @@
                         <h4 style="margin:0;color:#8e44ad;"><i class="fas fa-clipboard-list"></i> Registros Aprovados</h4>
                         <input type="text" id="epiSearchInput" placeholder="Buscar colaborador..." oninput="filterEpiTable()" style="padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:12px;width:200px;">
                     </div>
-                    <div style="overflow-x:auto;">
-                        <table style="min-width:900px;font-size:11px;">
-                            <thead><tr style="background:#f0eafb;">
-                                <th style="text-align:left;min-width:160px;">Colaborador</th>
-                                <th style="text-align:left;min-width:90px;">Matricula</th>
-                                <th><i class="fas fa-tshirt"></i> Blusa</th>
-                                <th><i class="fas fa-male"></i> Calca</th>
-                                <th><i class="fas fa-cut"></i> Bermuda</th>
-                                <th><i class="fas fa-mitten"></i> Casaco</th>
-                                <th><i class="fas fa-shoe-prints"></i> Bota</th>
-                                <th><i class="fas fa-hand-paper"></i> Luva</th>
-                                <th><i class="fas fa-life-ring"></i> Cinta</th>
-                                <th>Data</th><th>Acao</th>
-                            </tr></thead>
-                            <tbody id="tbEpi"><tr><td colspan="11" style="text-align:center;padding:25px;color:#999;">Nenhum registro aprovado ainda.</td></tr></tbody>
-                        </table>
-                    </div>
+                    <div style="overflow-x:auto;"><table style="min-width:900px;font-size:11px;">
+                        <thead><tr style="background:#f0eafb;">
+                            <th style="text-align:left;min-width:160px;">Colaborador</th><th style="text-align:left;min-width:90px;">Matricula</th>
+                            <th><i class="fas fa-tshirt"></i> Blusa</th><th><i class="fas fa-male"></i> Calca</th><th><i class="fas fa-cut"></i> Bermuda</th>
+                            <th><i class="fas fa-mitten"></i> Casaco</th><th><i class="fas fa-shoe-prints"></i> Bota</th><th><i class="fas fa-hand-paper"></i> Luva</th>
+                            <th><i class="fas fa-life-ring"></i> Cinta</th><th>Data</th><th>Acao</th>
+                        </tr></thead>
+                        <tbody id="tbEpi"><tr><td colspan="11" style="text-align:center;padding:25px;color:#999;">Nenhum registro aprovado ainda.</td></tr></tbody>
+                    </table></div>
                 </div>
             </div>
         </div>
@@ -1671,204 +1601,6 @@ function initPatchV164() {
         });
     }
 
-
-    // ================================================================
-    // UNIFORME & EPI — modulo supervisor (aba interna)
-    // ================================================================
-    var _epiSel = {blusa:'',calca:'',bermuda:'',casaco:'',bota:'',luva:'',cinta:''};
-    var _epiMap = {};
-
-    window.abrirFormEpiLocal = function() {
-        var ov=document.getElementById('epiOverlay');
-        if(ov) ov.style.display='flex';
-        document.body.style.overflow='hidden';
-    };
-    window.fecharEpiOverlay = function() {
-        var ov=document.getElementById('epiOverlay');if(ov)ov.style.display='none';
-        document.body.style.overflow='';
-    };
-
-    window.copyEpiFormLink = function() {
-        var nl=String.fromCharCode(10);
-        var link=window.location.href.split('?')[0]+'?mode=formepi';
-        var msg='Solicitacao de Uniforme e EPI'+nl+nl
-               +'Ola! Por favor selecione seus tamanhos de uniforme e EPI:'+nl+nl
-               +link+nl+nl
-               +'Toque no link, selecione seu nome e tamanhos, e envie. Obrigado!';
-        if(navigator.clipboard&&navigator.clipboard.writeText){
-            navigator.clipboard.writeText(msg).then(function(){_epiToast('Link copiado! Cole no WhatsApp.','success');})
-            .catch(function(){window.open('https://api.whatsapp.com/send?text='+encodeURIComponent(msg),'_blank');_epiToast('WhatsApp aberto!','success');});
-        } else {
-            window.open('https://api.whatsapp.com/send?text='+encodeURIComponent(msg),'_blank');
-            _epiToast('WhatsApp aberto!','success');
-        }
-    };
-
-    window.renderEpiTab = function(){loadEpiInbox();renderEpiTable();};
-
-    window.loadEpiInbox = async function() {
-        var body=document.getElementById('epiInboxBody');if(!body)return;
-        body.innerHTML='<div style="padding:15px;text-align:center;color:#999;font-size:12px;"><i class="fas fa-circle-notch fa-spin"></i> Carregando...</div>';
-        _epiMap={};var items=[];
-        try{if(typeof dbCloud!=='undefined'){var snap=await dbCloud.collection('logistica_epi_inbox').where('status','==','PENDENTE').get();snap.forEach(function(d){items.push({id:d.id,src:'fs',data:d.data()});});}}catch(e){}
-        try{var loc=JSON.parse(localStorage.getItem('epi_inbox_local')||'[]');var fsts=items.map(function(x){return x.data.timestamp;});
-            loc.forEach(function(d){if(d.status==='PENDENTE'&&!fsts.includes(d.timestamp))items.push({id:'L'+d.timestamp,src:'lc',data:d});});}catch(e){}
-        if(!items.length){body.innerHTML='<div style="padding:20px;text-align:center;color:#999;font-size:12px;">Nenhuma nova solicitacao pendente.</div>';return;}
-        var h='';
-        items.forEach(function(item,i){
-            _epiMap[i]=item;var d=item.data;
-            var tags=[['fas fa-tshirt','Blusa',d.blusa],['fas fa-male','Calca',d.calca],['fas fa-cut','Bermuda',d.bermuda],
-                      ['fas fa-mitten','Casaco',d.casaco],['fas fa-shoe-prints','Bota',d.bota],['fas fa-hand-paper','Luva',d.luva],['fas fa-life-ring','Cinta',d.cinta]];
-            var tt='';tags.forEach(function(p){if(p[2])tt+='<span class="epi-sz-tag"><i class="fas '+p[0]+'"></i> '+p[1]+': '+p[2]+'</span>';});
-            h+='<div class="epi-inbox-item"><div><div class="epi-inbox-name">'+(d.nomeCompleto||d.nome||'?')
-              +' <span style="font-size:10px;color:#999;">('+d.matricula+')</span></div><div class="epi-inbox-sizes">'+tt+'</div></div>'
-              +'<div style="display:flex;gap:8px;"><button class="btn-sm btn-green" onclick="aprovarEpi('+i+')"><i class="fas fa-check"></i> Aprovar</button>'
-              +'<button class="btn-sm btn-red" onclick="rejeitarEpi('+i+')"><i class="fas fa-times"></i> Rejeitar</button></div></div>';
-        });
-        body.innerHTML=h;
-    };
-
-    window.aprovarEpi = async function(i) {
-        var item=_epiMap[i];if(!item)return;
-        if(!confirm('Aprovar esta solicitacao de uniforme/EPI?'))return;
-        var d=item.data;
-        var r=JSON.parse(localStorage.getItem('epi_registros')||'[]');
-        r.unshift({id:Date.now(),mat:d.matricula,nome:d.nomeCompleto||d.nome||'',
-                   blusa:d.blusa||'-',calca:d.calca||'-',bermuda:d.bermuda||'-',
-                   casaco:d.casaco||'-',bota:d.bota||'-',luva:d.luva||'-',cinta:d.cinta||'-',
-                   data:new Date().toLocaleDateString()});
-        localStorage.setItem('epi_registros',JSON.stringify(r));
-        if(item.src==='lc'){try{var ts=parseInt(item.id.slice(1));var li=JSON.parse(localStorage.getItem('epi_inbox_local')||'[]');li=li.filter(function(x){return x.timestamp!==ts;});localStorage.setItem('epi_inbox_local',JSON.stringify(li));}catch(e){}}
-        try{if(typeof dbCloud!=='undefined'&&item.src==='fs')await dbCloud.collection('logistica_epi_inbox').doc(item.id).update({status:'APROVADO'});}catch(e){}
-        loadEpiInbox();renderEpiTable();_epiToast('EPI aprovado!','success');
-    };
-
-    window.rejeitarEpi = async function(i) {
-        var item=_epiMap[i];if(!item)return;
-        if(!confirm('Rejeitar esta solicitacao?'))return;
-        if(item.src==='lc'){try{var ts=parseInt(item.id.slice(1));var li=JSON.parse(localStorage.getItem('epi_inbox_local')||'[]');li=li.filter(function(x){return x.timestamp!==ts;});localStorage.setItem('epi_inbox_local',JSON.stringify(li));}catch(e){}}
-        try{if(typeof dbCloud!=='undefined'&&item.src==='fs')await dbCloud.collection('logistica_epi_inbox').doc(item.id).update({status:'REJEITADO'});}catch(e){}
-        loadEpiInbox();_epiToast('Solicitacao rejeitada.','warn');
-    };
-
-    window.renderEpiTable = function() {
-        var tb=document.getElementById('tbEpi');if(!tb)return;
-        var r=JSON.parse(localStorage.getItem('epi_registros')||'[]');
-        if(!r.length){tb.innerHTML='<tr><td colspan="11" style="text-align:center;padding:25px;color:#999;">Nenhum registro aprovado ainda.</td></tr>';return;}
-        function sz(v){if(!v||v==='-')return '<span style="color:#ccc;">-</span>';return '<span style="background:#e8daef;color:#6c3483;padding:2px 7px;border-radius:4px;font-weight:700;font-size:10px;">'+v+'</span>';}
-        tb.innerHTML=r.map(function(x,i){return '<tr><td style="text-align:left;font-weight:700;white-space:nowrap;">'+x.nome+'</td><td style="text-align:left;color:#777;font-size:10px;">'+x.mat+'</td><td>'+sz(x.blusa)+'</td><td>'+sz(x.calca)+'</td><td>'+sz(x.bermuda)+'</td><td>'+sz(x.casaco)+'</td><td>'+sz(x.bota)+'</td><td>'+sz(x.luva)+'</td><td>'+sz(x.cinta)+'</td><td style="color:#777;font-size:10px;white-space:nowrap;">'+x.data+'</td><td><button onclick="excluirEpiRegistro('+i+')" style="background:#e74c3c;color:white;border:none;border-radius:4px;padding:3px 8px;font-size:10px;font-weight:700;cursor:pointer;"><i class="fas fa-trash"></i></button></td></tr>';}).join('');
-    };
-
-    window.excluirEpiRegistro = function(i) {
-        if(!confirm('Excluir este registro?'))return;
-        var r=JSON.parse(localStorage.getItem('epi_registros')||'[]');r.splice(i,1);localStorage.setItem('epi_registros',JSON.stringify(r));renderEpiTable();_epiToast('Removido.','warn');
-    };
-
-    window.filterEpiTable = function() {
-        var q=(document.getElementById('epiSearchInput').value||'').toLowerCase();
-        document.querySelectorAll('#tbEpi tr').forEach(function(row){row.style.display=q===''||row.textContent.toLowerCase().includes(q)?'':'none';});
-    };
-
-    window.exportEpiExcel = function() {
-        try{var r=JSON.parse(localStorage.getItem('epi_registros')||'[]');
-            if(!r.length){_epiToast('Nenhum registro para exportar.','warn');return;}
-            var rows=[['Colaborador','Matricula','Blusa','Calca','Bermuda','Casaco','Bota','Luva','Cinta','Data']];
-            r.forEach(function(x){rows.push([x.nome,x.mat,x.blusa,x.calca,x.bermuda,x.casaco,x.bota,x.luva,x.cinta,x.data]);});
-            var wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Uniforme_EPI');
-            XLSX.writeFile(wb,'Uniforme_EPI_'+new Date().toISOString().slice(0,10)+'.xlsx');
-            _epiToast('Excel exportado!','success');}catch(e){_epiToast('Erro: '+e.message,'error');}
-    };
-
-    // ── Formulario publico EPI (pagina standalone) ─────────────────
-    var _epiPubSel = {blusa:'',calca:'',bermuda:'',casaco:'',bota:'',luva:'',cinta:''};
-
-    window.loadEpiPublicForm = async function() {
-        var sel=document.getElementById('epiPub_select');
-        if(!sel)return;
-        sel.innerHTML='<option value="">Carregando lista de colaboradores...</option>';
-        try{
-            if(typeof window.getFromDB==='function'){
-                var savedRH=await window.getFromDB('dRH');
-                if(savedRH&&savedRH.length>0){
-                    var ativos=savedRH.filter(function(r){return (r['Status']||r['STATUS']||'ATIVO').toUpperCase()!=='INATIVO';});
-                    ativos.sort(function(a,b){return (a['Nome']||a['NOME']||'').localeCompare(b['Nome']||b['NOME']||'');});
-                    sel.innerHTML='<option value="">-- Selecione seu nome --</option>';
-                    ativos.forEach(function(r){
-                        var mat=r['Matricula']||r['Matricula']||r['MATRICULA']||'';
-                        var nome=r['Nome']||r['NOME']||'';
-                        if(nome)sel.innerHTML+='<option value="'+mat+'">'+nome+'</option>';
-                    });
-                    return;
-                }
-            }
-            // Fallback: Firestore direto
-            var snap=await dbCloud.collection('logistica_dados').doc('dRH').get();
-            if(snap.exists){
-                var raw=snap.data();
-                var lista=raw.isChunked?null:JSON.parse(raw.payload||'[]');
-                if(lista&&lista.length){
-                    var ativos2=lista.filter(function(r){return (r['Status']||r['STATUS']||'ATIVO').toUpperCase()!=='INATIVO';});
-                    ativos2.sort(function(a,b){return (a['Nome']||a['NOME']||'').localeCompare(b['Nome']||b['NOME']||'');});
-                    sel.innerHTML='<option value="">-- Selecione seu nome --</option>';
-                    ativos2.forEach(function(r){
-                        var mat=r['Matricula']||r['Matricula']||r['MATRICULA']||'';
-                        var nome=r['Nome']||r['NOME']||'';
-                        if(nome)sel.innerHTML+='<option value="'+mat+'">'+nome+'</option>';
-                    });
-                    return;
-                }
-            }
-        }catch(e){}
-        sel.innerHTML='<option value="">Lista indisponivel — verifique conexao</option>';
-    };
-
-    window.epiPubSelectChange = function() {
-        var sel=document.getElementById('epiPub_select');
-        var matDiv=document.getElementById('epiPub_mat_display');
-        var matTxt=document.getElementById('epiPub_mat_txt');
-        if(sel&&sel.value&&matDiv&&matTxt){
-            matDiv.style.display='block';
-            matTxt.textContent=sel.value;
-        } else if(matDiv){
-            matDiv.style.display='none';
-        }
-    };
-
-    window.epiPubToggle = function(item,size) {
-        var grp=document.getElementById('pub_grp_'+item);if(!grp)return;
-        var same=(_epiPubSel[item]===size);
-        grp.querySelectorAll('.epi-sz-btn').forEach(function(b){b.classList.remove('selected');});
-        _epiPubSel[item]=same?'':size;
-        if(!same){grp.querySelectorAll('.epi-sz-btn').forEach(function(b){if(b.textContent.trim()===size)b.classList.add('selected');});}
-    };
-
-    window.submitEpiPublicForm = async function() {
-        var sel=document.getElementById('epiPub_select');
-        var vm=document.getElementById('epiPub-vmsg');
-        function se(t){if(vm){vm.style.display='block';vm.textContent=t;}}
-        if(!sel||!sel.value){se('Selecione seu nome na lista!');return;}
-        if(!Object.values(_epiPubSel).some(function(v){return v!=='';})){se('Selecione pelo menos um tamanho!');return;}
-        if(vm)vm.style.display='none';
-        var btn=document.getElementById('epiPub-submit-btn');
-        if(btn){btn.disabled=true;btn.innerHTML='<i class="fas fa-circle-notch fa-spin"></i> Enviando...';}
-        var nome=sel.options[sel.selectedIndex].text;
-        var mat=sel.value;
-        var p={nome:nome,sobrenome:'',nomeCompleto:nome,matricula:mat,
-               blusa:_epiPubSel.blusa,calca:_epiPubSel.calca,bermuda:_epiPubSel.bermuda,
-               casaco:_epiPubSel.casaco,bota:_epiPubSel.bota,luva:_epiPubSel.luva,
-               cinta:_epiPubSel.cinta,timestamp:Date.now(),status:'PENDENTE'};
-        try{if(typeof dbCloud!=='undefined')await dbCloud.collection('logistica_epi_inbox').add(p);}catch(e){}
-        var f=document.getElementById('epiPub-form');if(f)f.style.display='none';
-        var s=document.getElementById('epiPub-success');if(s)s.style.display='block';
-    };
-
-    function _epiToast(msg,type){
-        var box=document.getElementById('toastBox');if(!box)return;
-        var t=document.createElement('div');t.className='toast toast-'+(type||'info');t.textContent=msg;box.appendChild(t);
-        setTimeout(function(){t.style.opacity='0';t.style.transform='translateX(100%)';t.style.transition='0.3s';setTimeout(function(){t.remove();},300);},3500);
-    }
-    // ── fim modulo EPI ────────────────────────────────────────────
-
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initPatchV164);
     } else {
@@ -1878,20 +1610,5 @@ function initPatchV164() {
 })(); // fim IIFE patch v164
 </script>
 
-<div id="epiOverlay" onclick="if(event.target===this)fecharEpiOverlay()">
-    <div style="max-width:500px;width:100%;margin:0 auto;position:relative;">
-        <button onclick="fecharEpiOverlay()" style="position:absolute;top:-12px;right:-12px;background:#e74c3c;color:white;border:none;border-radius:50%;width:32px;height:32px;font-size:18px;cursor:pointer;z-index:10;font-weight:900;line-height:32px;padding:0;">&times;</button>
-        <div style="background:white;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.35);overflow:hidden;">
-            <div style="background:linear-gradient(135deg,#8e44ad,#6c3483);padding:18px 20px;color:white;text-align:center;">
-                <h3 style="margin:0;font-size:16px;"><i class="fas fa-eye"></i> Preview do Formulario EPI</h3>
-                <p style="margin:4px 0 0;font-size:12px;opacity:.85;">Este e o formulario que o colaborador vera no WhatsApp.</p>
-            </div>
-            <div style="padding:16px 20px;text-align:center;background:#f9f5ff;">
-                <p style="font-size:13px;color:#6c3483;margin:0 0 12px;font-weight:700;"><i class="fas fa-info-circle"></i> O colaborador vera apenas o formulario abaixo — sem senha, sem sistema.</p>
-                <button onclick="fecharEpiOverlay()" class="btn" style="background:#8e44ad;color:white;">Fechar Preview</button>
-            </div>
-        </div>
-    </div>
-</div>
 </body>
 </html>
