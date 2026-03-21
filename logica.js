@@ -1233,22 +1233,13 @@ function verificarLogin() {
     if (urlP.get('mode') === 'formepi') {
         const lo = document.getElementById('loginOverlay');
         if(lo) lo.style.display = 'none';
-        const header = document.querySelector('.app-header');
-        const memBar = document.querySelector('.memory-bar');
-        const tabBar = document.querySelector('.tab-bar');
-        const cont   = document.querySelector('.container');
-        if(header) header.style.display = 'none';
-        if(memBar) memBar.style.display  = 'none';
-        if(tabBar) tabBar.style.display  = 'none';
-        if(cont)   cont.style.display    = 'none';
+        ['app-header','memory-bar','tab-bar','container'].forEach(c => { const el=document.querySelector('.'+c)||document.getElementById(c); if(el) el.style.display='none'; });
         const fw = document.getElementById('publicFormWrapper');
         if(fw) fw.style.display = 'block';
-        const epiForm = document.getElementById('epi-pub-form');
-        const ferForm = document.getElementById('pf-form-view');
-        const ferSuc  = document.getElementById('pf-success-view');
-        if(epiForm) epiForm.style.display = 'block';
-        if(ferForm) ferForm.style.display = 'none';
-        if(ferSuc)  ferSuc.style.display  = 'none';
+        ['epi-pub-form','pf-form-view','pf-success-view'].forEach(id => {
+            const el=document.getElementById(id);
+            if(el) el.style.display = (id==='epi-pub-form') ? 'block' : 'none';
+        });
         loadEpiColabs();
         return;
     }
@@ -1267,119 +1258,250 @@ function checkPassword() { const s = document.getElementById('sysPassword').valu
 async function loadEmployeesForPublicForm() { try { const savedRH = await window.getFromDB('dRH'); const sel = document.getElementById('pf_colab_select'); if(savedRH && savedRH.length > 0) { sel.innerHTML = '<option value="">-- Selecione o seu nome aqui --</option>'; const ativos = savedRH.filter(r => (r['Status']||r['STATUS']||'ATIVO').toUpperCase() !== 'INATIVO'); ativos.sort((a,b) => (a['Nome']||a['NOME']||'').localeCompare(b['Nome']||b['NOME']||'')); ativos.forEach(r => { const mat = r['Matrícula']||r['Matricula']||r['MATRICULA']; const nomeCompleto = r['Nome']||r['NOME']||''; const pts = nomeCompleto.trim().split(' '); const exib = pts.length > 1 ? pts[0]+' '+pts[1] : pts[0]; sel.innerHTML += `<option value="${mat}">${exib}</option>`; }); } else { sel.innerHTML = '<option value="">Nenhum funcionário sincronizado.</option>'; } } catch(e) { document.getElementById('pf_colab_select').innerHTML = '<option value="">Erro ao carregar lista.</option>'; } }
 
 // ================================================================
-// UNIFORME & EPI — funções completas
+// UNIFORME & EPI — modulo completo v165
+// Registro salvo no Firebase (nuvem) — sincronizado em todos os
+// dispositivos. Aprovacao por item. Confirmacao de entrega.
 // ================================================================
 var _epiPubSel = {blusa:'',calca:'',bermuda:'',casaco:'',bota:'',luva:'',cinta:''};
 var _epiInboxMap = {};
+var _epiAprovandoIdx = -1;
 
-// Carrega colaboradores no select do formulário EPI público
+// Nomes e icones dos itens EPI
+var EPI_ITEMS = [
+    {k:'blusa',   lbl:'Blusa',   ico:'fas fa-tshirt'},
+    {k:'calca',   lbl:'Calca',   ico:'fas fa-male'},
+    {k:'bermuda', lbl:'Bermuda', ico:'fas fa-cut'},
+    {k:'casaco',  lbl:'Casaco',  ico:'fas fa-mitten'},
+    {k:'bota',    lbl:'Bota',    ico:'fas fa-shoe-prints'},
+    {k:'luva',    lbl:'Luva',    ico:'fas fa-hand-paper'},
+    {k:'cinta',   lbl:'Cinta',   ico:'fas fa-life-ring'}
+];
+
+// ── Form publico ─────────────────────────────────────────────
 async function loadEpiColabs() {
-    const sel = document.getElementById('epi_sel'); if(!sel) return;
+    const sel=document.getElementById('epi_sel'); if(!sel) return;
     try {
-        const rh = await window.getFromDB('dRH');
-        if(rh && rh.length > 0) {
-            const ativos = rh.filter(r => (r['Status']||r['STATUS']||'ATIVO').toUpperCase() !== 'INATIVO');
-            ativos.sort((a,b) => (a['Nome']||a['NOME']||'').localeCompare(b['Nome']||b['NOME']||''));
-            sel.innerHTML = '<option value="">-- Selecione o seu nome --</option>';
-            ativos.forEach(r => {
-                const mat  = r['Matrícula']||r['Matricula']||r['MATRICULA']||'';
-                const nome = r['Nome']||r['NOME']||'';
-                if(nome) sel.innerHTML += `<option value="${mat}">${nome}</option>`;
+        const rh=await window.getFromDB('dRH');
+        if(rh&&rh.length>0){
+            const ativos=rh.filter(r=>(r['Status']||r['STATUS']||'ATIVO').toUpperCase()!=='INATIVO');
+            ativos.sort((a,b)=>(a['Nome']||a['NOME']||'').localeCompare(b['Nome']||b['NOME']||''));
+            sel.innerHTML='<option value="">-- Selecione o seu nome --</option>';
+            ativos.forEach(r=>{
+                const mat=r['Matrícula']||r['Matricula']||r['MATRICULA']||'';
+                const nome=r['Nome']||r['NOME']||'';
+                if(nome) sel.innerHTML+=`<option value="${mat}">${nome}</option>`;
             });
             return;
         }
-    } catch(e) {}
-    sel.innerHTML = '<option value="">Sem lista disponivel. Verifique conexao.</option>';
+    } catch(e){}
+    sel.innerHTML='<option value="">Sem lista. Verifique conexao.</option>';
 }
 
-// Toggle de tamanho
 window.epiTog = function(item, size) {
-    const grp = document.getElementById('epi_grp_'+item); if(!grp) return;
-    const same = _epiPubSel[item] === size;
-    grp.querySelectorAll('.epi-sz-btn').forEach(b => b.classList.remove('selected'));
-    _epiPubSel[item] = same ? '' : size;
-    if(!same) grp.querySelectorAll('.epi-sz-btn').forEach(b => { if(b.textContent.trim()===size) b.classList.add('selected'); });
+    const grp=document.getElementById('epi_grp_'+item); if(!grp) return;
+    const same=_epiPubSel[item]===size;
+    grp.querySelectorAll('.epi-sz-btn').forEach(b=>b.classList.remove('selected'));
+    _epiPubSel[item]=same?'':size;
+    if(!same) grp.querySelectorAll('.epi-sz-btn').forEach(b=>{if(b.textContent.trim()===size) b.classList.add('selected');});
 };
 
-// Envio do formulário público
 window.submitEpiPublicForm = async function() {
-    const sel = document.getElementById('epi_sel');
-    const vm  = document.getElementById('epi-vmsg');
-    const err = t => { if(vm){vm.style.display='block';vm.textContent=t;} };
-    if(!sel||!sel.value) { err('Selecione o seu nome na lista!'); return; }
-    if(!Object.values(_epiPubSel).some(v => v!=='')) { err('Selecione pelo menos um tamanho!'); return; }
-    if(vm) vm.style.display = 'none';
-    const btn = document.getElementById('epi-sub-btn');
-    if(btn) { btn.disabled=true; btn.innerText='A ENVIAR...'; }
-    const nome = sel.options[sel.selectedIndex].text;
-    const payload = {
+    const sel=document.getElementById('epi_sel');
+    const vm=document.getElementById('epi-vmsg');
+    const err=t=>{if(vm){vm.style.display='block';vm.textContent=t;}};
+    if(!sel||!sel.value){err('Selecione o seu nome na lista!');return;}
+    if(!Object.values(_epiPubSel).some(v=>v!=='')){err('Selecione pelo menos um tamanho!');return;}
+    if(vm) vm.style.display='none';
+    const btn=document.getElementById('epi-sub-btn');
+    if(btn){btn.disabled=true;btn.innerText='A ENVIAR...';}
+    const nome=sel.options[sel.selectedIndex].text;
+    const payload={
         nomeCompleto:nome, nome:nome, matricula:sel.value,
         blusa:_epiPubSel.blusa, calca:_epiPubSel.calca, bermuda:_epiPubSel.bermuda,
         casaco:_epiPubSel.casaco, bota:_epiPubSel.bota, luva:_epiPubSel.luva,
         cinta:_epiPubSel.cinta, timestamp:new Date().getTime(), status:'PENDENTE'
     };
-    try { await dbCloud.collection('logistica_epi_inbox').add(payload); } catch(e) { console.warn('EPI save:',e); }
-    document.getElementById('epi-pub-form').style.display = 'none';
-    document.getElementById('epi-ok-view').style.display  = 'block';
+    try{await dbCloud.collection('logistica_epi_inbox').add(payload);}catch(e){console.warn('EPI:',e);}
+    document.getElementById('epi-pub-form').style.display='none';
+    document.getElementById('epi-ok-view').style.display='block';
 };
 
-// ── Supervisor ────────────────────────────────────────────────
+// ── Link WhatsApp ────────────────────────────────────────────
 window.copyEpiFormLink = function() {
-    const nl   = String.fromCharCode(10);
-    const link = window.location.href.split('?')[0] + '?mode=formepi';
-    const msg  = 'Solicitacao de Uniforme & EPI'+nl+nl
-               + 'Acesse o link, selecione seu nome e tamanhos:'+nl+nl
-               + link+nl+nl+'Obrigado!';
-    if(navigator.clipboard&&navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(msg).then(() => alert('Link copiado! Cole no WhatsApp.')).catch(()=>{window.open('https://api.whatsapp.com/send?text='+encodeURIComponent(msg),'_blank');});
+    const nl=String.fromCharCode(10);
+    const link=window.location.href.split('?')[0]+'?mode=formepi';
+    const msg='Solicitacao de Uniforme & EPI'+nl+nl+'Acesse o link, selecione seu nome e tamanhos:'+nl+nl+link+nl+nl+'Obrigado!';
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+        navigator.clipboard.writeText(msg).then(()=>alert('Link copiado! Cole no WhatsApp.')).catch(()=>{window.open('https://api.whatsapp.com/send?text='+encodeURIComponent(msg),'_blank');});
     } else { window.open('https://api.whatsapp.com/send?text='+encodeURIComponent(msg),'_blank'); }
 };
 
+// ── Caixa de entrada ────────────────────────────────────────
 window.renderEpiTab = function() { loadEpiInbox(); renderEpiTable(); };
 
 window.loadEpiInbox = async function() {
-    const body = document.getElementById('epiInboxBody'); if(!body) return;
-    body.innerHTML = '<div style="padding:15px;text-align:center;color:#999;font-size:12px;"><i class="fas fa-circle-notch fa-spin"></i> Carregando...</div>';
-    _epiInboxMap = {}; let items = [];
-    try { const snap = await dbCloud.collection('logistica_epi_inbox').where('status','==','PENDENTE').get(); snap.forEach(d=>items.push({id:d.id,data:d.data()})); } catch(e){}
-    if(!items.length){body.innerHTML='<div style="padding:20px;text-align:center;color:#999;font-size:12px;">Nenhuma nova solicitacao pendente.</div>';return;}
+    const body=document.getElementById('epiInboxBody'); if(!body) return;
+    body.innerHTML='<div style="padding:15px;text-align:center;color:#999;font-size:12px;"><i class="fas fa-circle-notch fa-spin"></i> Carregando...</div>';
+    _epiInboxMap={}; let items=[];
+    try{const snap=await dbCloud.collection('logistica_epi_inbox').where('status','==','PENDENTE').get();snap.forEach(d=>items.push({id:d.id,data:d.data()}));}catch(e){}
+    if(!items.length){body.innerHTML='<div style="padding:20px;text-align:center;color:#999;font-size:12px;">Nenhuma solicitacao pendente.</div>';return;}
     let h='';
     items.forEach((item,i)=>{
         _epiInboxMap[i]=item; const d=item.data;
-        const tags=[['fas fa-tshirt','Blusa',d.blusa],['fas fa-male','Calca',d.calca],['fas fa-cut','Bermuda',d.bermuda],['fas fa-mitten','Casaco',d.casaco],['fas fa-shoe-prints','Bota',d.bota],['fas fa-hand-paper','Luva',d.luva],['fas fa-life-ring','Cinta',d.cinta]];
-        const tt=tags.filter(p=>p[2]).map(p=>`<span class="epi-sz-tag"><i class="fas ${p[0]}"></i> ${p[1]}: ${p[2]}</span>`).join('');
-        h+=`<div class="epi-inbox-item"><div><div class="epi-inbox-name">${d.nomeCompleto||d.nome||'?'} <span style="font-size:10px;color:#999;">(${d.matricula})</span></div><div class="epi-inbox-sizes">${tt}</div></div><div style="display:flex;gap:8px;"><button class="btn-sm btn-green" onclick="aprovarEpi(${i})"><i class="fas fa-check"></i> Aprovar</button><button class="btn-sm btn-red" onclick="rejeitarEpi(${i})"><i class="fas fa-times"></i> Rejeitar</button></div></div>`;
+        const tags=EPI_ITEMS.filter(it=>d[it.k]).map(it=>`<span class="epi-sz-tag"><i class="${it.ico}"></i> ${it.lbl}: ${d[it.k]}</span>`).join('');
+        h+=`<div class="epi-inbox-item">
+              <div class="epi-inbox-name">${d.nomeCompleto||d.nome||'?'} <span style="font-size:10px;color:#999;font-weight:400;">(${d.matricula})</span></div>
+              <div class="epi-inbox-sizes">${tags}</div>
+              <div style="display:flex;gap:8px;margin-top:8px;">
+                <button class="btn btn-green" style="padding:5px 12px;font-size:12px;" onclick="abrirModalAprovar(${i})"><i class="fas fa-check-square"></i> Aprovar Itens</button>
+                <button class="btn btn-red" style="padding:5px 12px;font-size:12px;" onclick="rejeitarEpi(${i})"><i class="fas fa-times"></i> Rejeitar Tudo</button>
+              </div>
+            </div>`;
     });
     body.innerHTML=h;
 };
 
-window.aprovarEpi = async function(i) {
-    const item=_epiInboxMap[i]; if(!item||!confirm('Aprovar esta solicitacao EPI?')) return;
+// ── Modal de aprovacao por item ──────────────────────────────
+window.abrirModalAprovar = function(i) {
+    const item=_epiInboxMap[i]; if(!item) return;
+    _epiAprovandoIdx=i;
     const d=item.data;
-    let r=JSON.parse(localStorage.getItem('epi_registros')||'[]');
-    r.unshift({id:Date.now(),mat:d.matricula,nome:d.nomeCompleto||d.nome||'',blusa:d.blusa||'-',calca:d.calca||'-',bermuda:d.bermuda||'-',casaco:d.casaco||'-',bota:d.bota||'-',luva:d.luva||'-',cinta:d.cinta||'-',data:new Date().toLocaleDateString('pt-BR')});
-    localStorage.setItem('epi_registros',JSON.stringify(r));
+    const nomeEl=document.getElementById('modalAprovarEpiNome');
+    if(nomeEl) nomeEl.innerHTML=`<i class="fas fa-user"></i> ${d.nomeCompleto||d.nome||'?'} <span style="color:#888;font-weight:400;font-size:12px;">(${d.matricula})</span>`;
+    const itensEl=document.getElementById('modalAprovarEpiItens');
+    if(itensEl){
+        // Mostra checkboxes apenas para os itens que o colaborador solicitou
+        const itensReq=EPI_ITEMS.filter(it=>d[it.k]);
+        itensEl.innerHTML=itensReq.map(it=>`
+            <label class="epi-item-chk" id="chk_lbl_${it.k}" onclick="toggleEpiChk('${it.k}',this)">
+                <input type="checkbox" id="chk_${it.k}" checked onchange="toggleEpiChk('${it.k}',this.closest('label'))">
+                <i class="${it.ico}" style="color:#8e44ad;"></i>
+                <span style="font-weight:800;">${it.lbl}:</span>
+                <span style="background:#8e44ad;color:white;border-radius:5px;padding:2px 8px;font-size:11px;">${d[it.k]}</span>
+                <span style="margin-left:auto;font-size:10px;color:#27ae60;" id="chk_status_${it.k}">Sera fornecido</span>
+            </label>`).join('');
+        // Marca todos como checked inicialmente
+        itensReq.forEach(it=>{const chk=document.getElementById('chk_'+it.k);if(chk)chk.checked=true;});
+    }
+    document.getElementById('modalAprovarEpi').style.display='flex';
+};
+
+window.toggleEpiChk = function(key, lbl) {
+    const chk=document.getElementById('chk_'+key);
+    const status=document.getElementById('chk_status_'+key);
+    if(!chk) return;
+    // Clique no label: toggle
+    if(lbl===chk.closest('label')){/* keep native checkbox behavior */}
+    if(chk.checked){
+        if(lbl) lbl.classList.add('checked');
+        if(status){status.textContent='Sera fornecido';status.style.color='#27ae60';}
+    } else {
+        if(lbl) lbl.classList.remove('checked');
+        if(status){status.textContent='Ja possui / nao fornecido';status.style.color='#e67e22';}
+    }
+};
+
+window.confirmarAprovacaoEpi = async function() {
+    const item=_epiInboxMap[_epiAprovandoIdx]; if(!item) return;
+    const d=item.data;
+    // Coleta apenas os itens marcados
+    const itensFornecidos={};
+    EPI_ITEMS.forEach(it=>{
+        const chk=document.getElementById('chk_'+it.k);
+        if(chk&&chk.checked&&d[it.k]) itensFornecidos[it.k]=d[it.k];
+        else itensFornecidos[it.k]='-';
+    });
+    // Salva no Firebase
+    let regs=(await window.getFromDB('epi_registros'))||[];
+    regs.unshift({
+        id:Date.now(), mat:d.matricula,
+        nome:d.nomeCompleto||d.nome||'',
+        blusa:itensFornecidos.blusa, calca:itensFornecidos.calca,
+        bermuda:itensFornecidos.bermuda, casaco:itensFornecidos.casaco,
+        bota:itensFornecidos.bota, luva:itensFornecidos.luva,
+        cinta:itensFornecidos.cinta,
+        dataAprov:new Date().toLocaleDateString('pt-BR'),
+        status:'aprovado', dataEntrega:''
+    });
+    await window.saveToDB('epi_registros', regs);
     try{await dbCloud.collection('logistica_epi_inbox').doc(item.id).update({status:'APROVADO'});}catch(e){}
-    loadEpiInbox(); renderEpiTable(); alert('EPI aprovado!');
+    document.getElementById('modalAprovarEpi').style.display='none';
+    loadEpiInbox(); renderEpiTable();
+    alert('Aprovado e salvo na nuvem!');
 };
 
 window.rejeitarEpi = async function(i) {
-    const item=_epiInboxMap[i]; if(!item||!confirm('Rejeitar?')) return;
+    const item=_epiInboxMap[i]; if(!item||!confirm('Rejeitar toda esta solicitacao?')) return;
     try{await dbCloud.collection('logistica_epi_inbox').doc(item.id).update({status:'REJEITADO'});}catch(e){}
     loadEpiInbox();
 };
 
-window.renderEpiTable = function() {
-    const tb=document.getElementById('tbEpi'); if(!tb) return;
-    const r=JSON.parse(localStorage.getItem('epi_registros')||'[]');
-    if(!r.length){tb.innerHTML='<tr><td colspan="11" style="text-align:center;padding:25px;color:#999;">Nenhum registro aprovado ainda.</td></tr>';return;}
-    const sz=v=>(!v||v==='-')?'<span style="color:#ccc;">-</span>':`<span style="background:#e8daef;color:#6c3483;padding:2px 7px;border-radius:4px;font-weight:700;font-size:10px;">${v}</span>`;
-    tb.innerHTML=r.map((x,i)=>`<tr><td style="text-align:left;font-weight:700;white-space:nowrap;">${x.nome}</td><td style="text-align:left;color:#777;font-size:10px;">${x.mat}</td><td>${sz(x.blusa)}</td><td>${sz(x.calca)}</td><td>${sz(x.bermuda)}</td><td>${sz(x.casaco)}</td><td>${sz(x.bota)}</td><td>${sz(x.luva)}</td><td>${sz(x.cinta)}</td><td style="color:#777;font-size:10px;white-space:nowrap;">${x.data}</td><td><button onclick="excluirEpiReg(${i})" style="background:#e74c3c;color:white;border:none;border-radius:4px;padding:3px 8px;font-size:10px;font-weight:700;cursor:pointer;"><i class="fas fa-trash"></i></button></td></tr>`).join('');
+// ── Confirmar entrega ────────────────────────────────────────
+window.confirmarEntregaEpi = async function(i) {
+    if(!confirm('Confirmar a entrega fisica dos itens para este colaborador?')) return;
+    let regs=(await window.getFromDB('epi_registros'))||[];
+    if(!regs[i]) return;
+    regs[i].status='entregue';
+    regs[i].dataEntrega=new Date().toLocaleDateString('pt-BR');
+    await window.saveToDB('epi_registros', regs);
+    renderEpiTable();
+    alert('Entrega confirmada!');
 };
 
-window.excluirEpiReg = function(i){if(!confirm('Excluir?'))return;let r=JSON.parse(localStorage.getItem('epi_registros')||'[]');r.splice(i,1);localStorage.setItem('epi_registros',JSON.stringify(r));renderEpiTable();};
-window.filterEpiTable = function(){const q=(document.getElementById('epiSearchInput').value||'').toLowerCase();document.querySelectorAll('#tbEpi tr').forEach(row=>{row.style.display=q===''||row.textContent.toLowerCase().includes(q)?'':'none';});};
-window.exportEpiExcel = function(){try{const r=JSON.parse(localStorage.getItem('epi_registros')||'[]');if(!r.length){alert('Sem registros.');return;}const rows=[['Colaborador','Matricula','Blusa','Calca','Bermuda','Casaco','Bota','Luva','Cinta','Data']];r.forEach(x=>rows.push([x.nome,x.mat,x.blusa,x.calca,x.bermuda,x.casaco,x.bota,x.luva,x.cinta,x.data]));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Uniforme_EPI');XLSX.writeFile(wb,'Uniforme_EPI_'+new Date().toISOString().slice(0,10)+'.xlsx');}catch(e){alert('Erro:'+e.message);}};
+// ── Tabela de registros ──────────────────────────────────────
+window.renderEpiTable = async function() {
+    const tb=document.getElementById('tbEpi'); if(!tb) return;
+    tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:15px;color:#999;"><i class="fas fa-circle-notch fa-spin"></i> Carregando da nuvem...</td></tr>';
+    let regs=[];
+    try{regs=(await window.getFromDB('epi_registros'))||[];}catch(e){}
+    const filterSel=document.getElementById('epiFilterStatus');
+    const filter=filterSel?filterSel.value:'all';
+    const filtered=filter==='all'?regs:regs.filter(r=>r.status===filter);
+    const cnt=document.getElementById('epiRegCount'); if(cnt) cnt.textContent=regs.length;
+    const entgCnt=document.getElementById('epiEntregCount'); if(entgCnt) entgCnt.textContent=regs.filter(r=>r.status==='entregue').length+' entregues';
+    if(!filtered.length){tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:25px;color:#999;">Nenhum registro encontrado.</td></tr>';return;}
+    const sz=v=>(!v||v==='-')?'<span style="color:#ccc;">-</span>':`<span style="background:#e8daef;color:#6c3483;padding:2px 7px;border-radius:4px;font-weight:700;font-size:10px;">${v}</span>`;
+    // Map filtered index back to original index for actions
+    const origIndexes=filter==='all'?filtered.map((_,i)=>i):regs.map((r,i)=>({r,i})).filter(x=>x.r.status===filter).map(x=>x.i);
+    tb.innerHTML=filtered.map((x,fi)=>{
+        const oi=origIndexes[fi];
+        const isEntregue=x.status==='entregue';
+        const statusBadge=isEntregue
+            ?`<span class="epi-badge-entg"><i class="fas fa-check-double"></i> Entregue ${x.dataEntrega||''}</span>`
+            :`<span class="epi-badge-apr"><i class="fas fa-box"></i> Aguard. Entrega</span>`;
+        const acoes=isEntregue
+            ?`<button onclick="excluirEpiReg(${oi})" style="background:#e74c3c;color:white;border:none;border-radius:4px;padding:3px 8px;font-size:10px;font-weight:700;cursor:pointer;" title="Excluir"><i class="fas fa-trash"></i></button>`
+            :`<button onclick="confirmarEntregaEpi(${oi})" style="background:#27ae60;color:white;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;" title="Confirmar entrega fisica"><i class="fas fa-box-open"></i> Entregar</button>
+              <button onclick="excluirEpiReg(${oi})" style="background:#e74c3c;color:white;border:none;border-radius:4px;padding:5px 8px;font-size:10px;font-weight:700;cursor:pointer;margin-left:4px;" title="Excluir"><i class="fas fa-trash"></i></button>`;
+        const rowClass=isEntregue?'epi-reg-row-entg':'epi-reg-row-pend';
+        return `<tr class="${rowClass}"><td style="text-align:left;font-weight:700;white-space:nowrap;">${x.nome}</td><td style="text-align:left;color:#777;font-size:10px;">${x.mat}</td><td>${sz(x.blusa)}</td><td>${sz(x.calca)}</td><td>${sz(x.bermuda)}</td><td>${sz(x.casaco)}</td><td>${sz(x.bota)}</td><td>${sz(x.luva)}</td><td>${sz(x.cinta)}</td><td style="color:#777;font-size:10px;white-space:nowrap;">${x.dataAprov||x.data||''}</td><td>${statusBadge}</td><td style="white-space:nowrap;">${acoes}</td></tr>`;
+    }).join('');
+};
+
+window.excluirEpiReg = async function(i) {
+    if(!confirm('Excluir este registro permanentemente?')) return;
+    let regs=(await window.getFromDB('epi_registros'))||[];
+    regs.splice(i,1);
+    await window.saveToDB('epi_registros',regs);
+    renderEpiTable();
+};
+
+window.filterEpiTable = function() {
+    const q=(document.getElementById('epiSearchInput').value||'').toLowerCase();
+    document.querySelectorAll('#tbEpi tr').forEach(row=>{row.style.display=q===''||row.textContent.toLowerCase().includes(q)?'':'none';});
+};
+
+window.exportEpiExcel = async function() {
+    try{
+        const regs=(await window.getFromDB('epi_registros'))||[];
+        if(!regs.length){alert('Nenhum registro para exportar.');return;}
+        const rows=[['Colaborador','Matricula','Blusa','Calca','Bermuda','Casaco','Bota','Luva','Cinta','Data Aprovacao','Status','Data Entrega']];
+        regs.forEach(x=>rows.push([x.nome,x.mat,x.blusa,x.calca,x.bermuda,x.casaco,x.bota,x.luva,x.cinta,x.dataAprov||x.data||'',x.status==='entregue'?'Entregue':'Aguardando Entrega',x.dataEntrega||'']));
+        const wb=XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Uniforme_EPI');
+        XLSX.writeFile(wb,'Uniforme_EPI_'+new Date().toISOString().slice(0,10)+'.xlsx');
+    }catch(e){alert('Erro:'+e.message);}
+};
 
 window.updatePublicFormFields = function() { const sel = document.getElementById('pf_colab_select'); if(!sel.value) return; document.getElementById('pf_mat').value = sel.value; document.getElementById('pf_nome').value = sel.options[sel.selectedIndex].text; };
 async function submitPublicForm() { const nome = document.getElementById('pf_nome').value; const mat = document.getElementById('pf_mat').value; const inicio = document.getElementById('pf_inicio').value; const fim = document.getElementById('pf_fim').value; const vendeuRadio = document.querySelector('input[name="pf_vender"]:checked'); const vendeu = vendeuRadio ? vendeuRadio.value : 'nao'; if(!mat||!nome) return alert("Selecione o seu nome!"); if(!inicio||!fim) return alert("Preencha Início e Retorno!"); const payload = { matricula:mat, nome:nome, dataInicio:inicio, dataRetorno:fim, vendeuDias:vendeu==='sim', timestamp:new Date().getTime(), status:'PENDENTE' }; try { const btn = document.querySelector('.pf-btn'); btn.innerText='A ENVIAR...'; btn.disabled=true; await dbCloud.collection('logistica_ferias_inbox').add(payload);
@@ -1648,14 +1770,12 @@ async function submitPublicForm() { const nome = document.getElementById('pf_nom
             document.querySelector('.memory-bar').style.display = 'none';
             document.querySelector('.tab-bar').style.display = 'none';
             document.querySelector('.container').style.display = 'none';
-            if (document.getElementById('btnExitTV')) document.getElementById('btnExitTV').style.display = 'none';
+            if(document.getElementById('btnExitTV')) document.getElementById('btnExitTV').style.display = 'none';
             document.getElementById('publicFormWrapper').style.display = 'block';
-            const epiForm = document.getElementById('epi-pub-form');
-            const ferForm = document.getElementById('pf-form-view');
-            const ferSuc  = document.getElementById('pf-success-view');
-            if(epiForm) epiForm.style.display = 'block';
-            if(ferForm) ferForm.style.display = 'none';
-            if(ferSuc)  ferSuc.style.display  = 'none';
+            ['epi-pub-form','pf-form-view','pf-success-view'].forEach(id => {
+                const el=document.getElementById(id);
+                if(el) el.style.display=(id==='epi-pub-form')?'block':'none';
+            });
             loadEpiColabs();
         }
     });
