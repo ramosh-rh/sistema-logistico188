@@ -1233,12 +1233,19 @@ function verificarLogin() {
     if (urlP.get('mode') === 'formepi') {
         const lo = document.getElementById('loginOverlay');
         if(lo) lo.style.display = 'none';
-        ['app-header','memory-bar','tab-bar','container'].forEach(c => { const el=document.querySelector('.'+c)||document.getElementById(c); if(el) el.style.display='none'; });
+        const header = document.querySelector('.app-header');
+        const memBar = document.querySelector('.memory-bar');
+        const tabBar = document.querySelector('.tab-bar');
+        const cont   = document.querySelector('.container');
+        if(header) header.style.display = 'none';
+        if(memBar) memBar.style.display  = 'none';
+        if(tabBar) tabBar.style.display  = 'none';
+        if(cont)   cont.style.display    = 'none';
         const fw = document.getElementById('publicFormWrapper');
         if(fw) fw.style.display = 'block';
         ['epi-pub-form','pf-form-view','pf-success-view'].forEach(id => {
-            const el=document.getElementById(id);
-            if(el) el.style.display = (id==='epi-pub-form') ? 'block' : 'none';
+            const el = document.getElementById(id);
+            if(el) el.style.display = (id === 'epi-pub-form') ? 'block' : 'none';
         });
         loadEpiColabs();
         return;
@@ -1258,15 +1265,16 @@ function checkPassword() { const s = document.getElementById('sysPassword').valu
 async function loadEmployeesForPublicForm() { try { const savedRH = await window.getFromDB('dRH'); const sel = document.getElementById('pf_colab_select'); if(savedRH && savedRH.length > 0) { sel.innerHTML = '<option value="">-- Selecione o seu nome aqui --</option>'; const ativos = savedRH.filter(r => (r['Status']||r['STATUS']||'ATIVO').toUpperCase() !== 'INATIVO'); ativos.sort((a,b) => (a['Nome']||a['NOME']||'').localeCompare(b['Nome']||b['NOME']||'')); ativos.forEach(r => { const mat = r['Matrícula']||r['Matricula']||r['MATRICULA']; const nomeCompleto = r['Nome']||r['NOME']||''; const pts = nomeCompleto.trim().split(' '); const exib = pts.length > 1 ? pts[0]+' '+pts[1] : pts[0]; sel.innerHTML += `<option value="${mat}">${exib}</option>`; }); } else { sel.innerHTML = '<option value="">Nenhum funcionário sincronizado.</option>'; } } catch(e) { document.getElementById('pf_colab_select').innerHTML = '<option value="">Erro ao carregar lista.</option>'; } }
 
 // ================================================================
-// UNIFORME & EPI — modulo completo v165
-// Registro salvo no Firebase (nuvem) — sincronizado em todos os
-// dispositivos. Aprovacao por item. Confirmacao de entrega.
+// UNIFORME & EPI — v165.2 PERFORMANCE
 // ================================================================
 var _epiPubSel = {blusa:'',calca:'',bermuda:'',casaco:'',bota:'',luva:'',cinta:''};
 var _epiInboxMap = {};
 var _epiAprovandoIdx = -1;
+var _epiTabBusy = false;
 
-// Nomes e icones dos itens EPI
+// Cache de registros (evita ir ao Firestore a cada filtro/busca)
+var _epiCache = { docs: null, ts: 0, TTL: 90000 }; // 90s TTL
+
 var EPI_ITEMS = [
     {k:'blusa',   lbl:'Blusa',   ico:'fas fa-tshirt'},
     {k:'calca',   lbl:'Calca',   ico:'fas fa-male'},
@@ -1277,230 +1285,308 @@ var EPI_ITEMS = [
     {k:'cinta',   lbl:'Cinta',   ico:'fas fa-life-ring'}
 ];
 
-// ── Form publico ─────────────────────────────────────────────
+// ── Form publico ──────────────────────────────────────────────
 async function loadEpiColabs() {
-    const sel=document.getElementById('epi_sel'); if(!sel) return;
+    const sel = document.getElementById('epi_sel'); if(!sel) return;
     try {
-        const rh=await window.getFromDB('dRH');
-        if(rh&&rh.length>0){
-            const ativos=rh.filter(r=>(r['Status']||r['STATUS']||'ATIVO').toUpperCase()!=='INATIVO');
-            ativos.sort((a,b)=>(a['Nome']||a['NOME']||'').localeCompare(b['Nome']||b['NOME']||''));
-            sel.innerHTML='<option value="">-- Selecione o seu nome --</option>';
-            ativos.forEach(r=>{
-                const mat=r['Matrícula']||r['Matricula']||r['MATRICULA']||'';
-                const nome=r['Nome']||r['NOME']||'';
-                if(nome) sel.innerHTML+=`<option value="${mat}">${nome}</option>`;
+        const rh = await window.getFromDB('dRH'); // getFromDB ja tem cache interno
+        if(rh && rh.length > 0) {
+            const ativos = rh.filter(r => (r['Status']||r['STATUS']||'ATIVO').toUpperCase() !== 'INATIVO');
+            ativos.sort((a,b) => (a['Nome']||a['NOME']||'').localeCompare(b['Nome']||b['NOME']||''));
+            sel.innerHTML = '<option value="">-- Selecione o seu nome --</option>';
+            ativos.forEach(r => {
+                const mat  = r['Matrícula']||r['Matricula']||r['MATRICULA']||'';
+                const nome = r['Nome']||r['NOME']||'';
+                if(nome) sel.innerHTML += `<option value="${mat}">${nome}</option>`;
             });
             return;
         }
-    } catch(e){}
-    sel.innerHTML='<option value="">Sem lista. Verifique conexao.</option>';
+    } catch(e) {}
+    sel.innerHTML = '<option value="">Sem lista. Verifique conexao.</option>';
 }
 
 window.epiTog = function(item, size) {
-    const grp=document.getElementById('epi_grp_'+item); if(!grp) return;
-    const same=_epiPubSel[item]===size;
-    grp.querySelectorAll('.epi-sz-btn').forEach(b=>b.classList.remove('selected'));
-    _epiPubSel[item]=same?'':size;
-    if(!same) grp.querySelectorAll('.epi-sz-btn').forEach(b=>{if(b.textContent.trim()===size) b.classList.add('selected');});
+    const grp = document.getElementById('epi_grp_'+item); if(!grp) return;
+    const same = _epiPubSel[item] === size;
+    grp.querySelectorAll('.epi-sz-btn').forEach(b => b.classList.remove('selected'));
+    _epiPubSel[item] = same ? '' : size;
+    if(!same) grp.querySelectorAll('.epi-sz-btn').forEach(b => { if(b.textContent.trim()===size) b.classList.add('selected'); });
 };
 
 window.submitEpiPublicForm = async function() {
-    const sel=document.getElementById('epi_sel');
-    const vm=document.getElementById('epi-vmsg');
-    const err=t=>{if(vm){vm.style.display='block';vm.textContent=t;}};
-    if(!sel||!sel.value){err('Selecione o seu nome na lista!');return;}
-    if(!Object.values(_epiPubSel).some(v=>v!=='')){err('Selecione pelo menos um tamanho!');return;}
+    const sel = document.getElementById('epi_sel');
+    const vm  = document.getElementById('epi-vmsg');
+    const err = t => { if(vm){vm.style.display='block';vm.textContent=t;} };
+    if(!sel||!sel.value) { err('Selecione o seu nome na lista!'); return; }
+    if(!Object.values(_epiPubSel).some(v => v!=='')) { err('Selecione pelo menos um tamanho!'); return; }
     if(vm) vm.style.display='none';
-    const btn=document.getElementById('epi-sub-btn');
-    if(btn){btn.disabled=true;btn.innerText='A ENVIAR...';}
-    const nome=sel.options[sel.selectedIndex].text;
-    const payload={
+    const btn = document.getElementById('epi-sub-btn');
+    if(btn) { btn.disabled=true; btn.innerText='A ENVIAR...'; }
+    const nome = sel.options[sel.selectedIndex].text;
+    const payload = {
         nomeCompleto:nome, nome:nome, matricula:sel.value,
         blusa:_epiPubSel.blusa, calca:_epiPubSel.calca, bermuda:_epiPubSel.bermuda,
         casaco:_epiPubSel.casaco, bota:_epiPubSel.bota, luva:_epiPubSel.luva,
         cinta:_epiPubSel.cinta, timestamp:new Date().getTime(), status:'PENDENTE'
     };
-    try{await dbCloud.collection('logistica_epi_inbox').add(payload);}catch(e){console.warn('EPI:',e);}
+    try { await dbCloud.collection('logistica_epi_inbox').add(payload); } catch(e) {}
     document.getElementById('epi-pub-form').style.display='none';
     document.getElementById('epi-ok-view').style.display='block';
 };
 
-// ── Link WhatsApp ────────────────────────────────────────────
+// ── Link WhatsApp ─────────────────────────────────────────────
 window.copyEpiFormLink = function() {
-    const nl=String.fromCharCode(10);
-    const link=window.location.href.split('?')[0]+'?mode=formepi';
-    const msg='Solicitacao de Uniforme & EPI'+nl+nl+'Acesse o link, selecione seu nome e tamanhos:'+nl+nl+link+nl+nl+'Obrigado!';
-    if(navigator.clipboard&&navigator.clipboard.writeText){
+    const nl   = String.fromCharCode(10);
+    const link = window.location.href.split('?')[0] + '?mode=formepi';
+    const msg  = 'Solicitacao de Uniforme & EPI'+nl+nl+'Acesse o link, selecione seu nome e tamanhos:'+nl+nl+link+nl+nl+'Obrigado!';
+    if(navigator.clipboard&&navigator.clipboard.writeText) {
         navigator.clipboard.writeText(msg).then(()=>alert('Link copiado! Cole no WhatsApp.')).catch(()=>{window.open('https://api.whatsapp.com/send?text='+encodeURIComponent(msg),'_blank');});
     } else { window.open('https://api.whatsapp.com/send?text='+encodeURIComponent(msg),'_blank'); }
 };
 
-// ── Caixa de entrada ────────────────────────────────────────
-window.renderEpiTab = function() { loadEpiInbox(); renderEpiTable(); };
-
-window.loadEpiInbox = async function() {
-    const body=document.getElementById('epiInboxBody'); if(!body) return;
-    body.innerHTML='<div style="padding:15px;text-align:center;color:#999;font-size:12px;"><i class="fas fa-circle-notch fa-spin"></i> Carregando...</div>';
-    _epiInboxMap={}; let items=[];
-    try{const snap=await dbCloud.collection('logistica_epi_inbox').where('status','==','PENDENTE').get();snap.forEach(d=>items.push({id:d.id,data:d.data()}));}catch(e){}
-    if(!items.length){body.innerHTML='<div style="padding:20px;text-align:center;color:#999;font-size:12px;">Nenhuma solicitacao pendente.</div>';return;}
-    let h='';
-    items.forEach((item,i)=>{
-        _epiInboxMap[i]=item; const d=item.data;
-        const tags=EPI_ITEMS.filter(it=>d[it.k]).map(it=>`<span class="epi-sz-tag"><i class="${it.ico}"></i> ${it.lbl}: ${d[it.k]}</span>`).join('');
-        h+=`<div class="epi-inbox-item">
-              <div class="epi-inbox-name">${d.nomeCompleto||d.nome||'?'} <span style="font-size:10px;color:#999;font-weight:400;">(${d.matricula})</span></div>
-              <div class="epi-inbox-sizes">${tags}</div>
-              <div style="display:flex;gap:8px;margin-top:8px;">
-                <button class="btn btn-green" style="padding:5px 12px;font-size:12px;" onclick="abrirModalAprovar(${i})"><i class="fas fa-check-square"></i> Aprovar Itens</button>
-                <button class="btn btn-red" style="padding:5px 12px;font-size:12px;" onclick="rejeitarEpi(${i})"><i class="fas fa-times"></i> Rejeitar Tudo</button>
-              </div>
-            </div>`;
-    });
-    body.innerHTML=h;
+// ── ABA SUPERVISOR: carrega inbox + tabela em PARALELO ─────────
+window.renderEpiTab = async function(forceRefresh) {
+    if(_epiTabBusy) return;
+    _epiTabBusy = true;
+    try {
+        // Parallel: inbox e registros ao mesmo tempo
+        await Promise.all([
+            loadEpiInbox(forceRefresh),
+            renderEpiTable(forceRefresh)
+        ]);
+    } finally {
+        setTimeout(() => { _epiTabBusy = false; }, 1500);
+    }
 };
 
-// ── Modal de aprovacao por item ──────────────────────────────
+// ── Caixa de entrada ──────────────────────────────────────────
+window.loadEpiInbox = async function(forceRefresh) {
+    const body = document.getElementById('epiInboxBody'); if(!body) return;
+    body.innerHTML = '<div style="padding:12px;text-align:center;color:#999;font-size:12px;"><i class="fas fa-circle-notch fa-spin"></i> Carregando...</div>';
+    _epiInboxMap = {}; let items = [];
+    try {
+        const snap = await dbCloud.collection('logistica_epi_inbox').where('status','==','PENDENTE').get();
+        snap.forEach(d => items.push({id:d.id, data:d.data()}));
+        // Ordena por timestamp decrescente (sem precisar de indice composto)
+        items.sort((a,b) => (b.data.timestamp||0) - (a.data.timestamp||0));
+    } catch(e) {}
+    if(!items.length) { body.innerHTML='<div style="padding:16px;text-align:center;color:#999;font-size:12px;">Nenhuma solicitacao pendente.</div>'; return; }
+    let h = '';
+    items.forEach((item, i) => {
+        _epiInboxMap[i] = item; const d = item.data;
+        const tags = EPI_ITEMS.filter(it=>d[it.k]).map(it=>`<span class="epi-sz-tag"><i class="${it.ico}"></i> ${it.lbl}: ${d[it.k]}</span>`).join('');
+        h += `<div class="epi-inbox-item">
+            <div class="epi-inbox-name">${d.nomeCompleto||d.nome||'?'} <span style="font-size:10px;color:#999;font-weight:400;">(${d.matricula})</span></div>
+            <div class="epi-inbox-sizes">${tags}</div>
+            <div style="display:flex;gap:8px;margin-top:8px;">
+                <button class="btn btn-green" style="padding:5px 12px;font-size:12px;" onclick="abrirModalAprovar(${i})"><i class="fas fa-check-square"></i> Aprovar Itens</button>
+                <button class="btn btn-red" style="padding:5px 12px;font-size:12px;" onclick="rejeitarEpi(${i})"><i class="fas fa-times"></i> Rejeitar</button>
+            </div>
+        </div>`;
+    });
+    body.innerHTML = h;
+};
+
+// ── Modal aprovacao por item ───────────────────────────────────
 window.abrirModalAprovar = function(i) {
-    const item=_epiInboxMap[i]; if(!item) return;
-    _epiAprovandoIdx=i;
-    const d=item.data;
-    const nomeEl=document.getElementById('modalAprovarEpiNome');
-    if(nomeEl) nomeEl.innerHTML=`<i class="fas fa-user"></i> ${d.nomeCompleto||d.nome||'?'} <span style="color:#888;font-weight:400;font-size:12px;">(${d.matricula})</span>`;
-    const itensEl=document.getElementById('modalAprovarEpiItens');
-    if(itensEl){
-        // Mostra checkboxes apenas para os itens que o colaborador solicitou
-        const itensReq=EPI_ITEMS.filter(it=>d[it.k]);
-        itensEl.innerHTML=itensReq.map(it=>`
-            <label class="epi-item-chk" id="chk_lbl_${it.k}" onclick="toggleEpiChk('${it.k}',this)">
-                <input type="checkbox" id="chk_${it.k}" checked onchange="toggleEpiChk('${it.k}',this.closest('label'))">
-                <i class="${it.ico}" style="color:#8e44ad;"></i>
-                <span style="font-weight:800;">${it.lbl}:</span>
-                <span style="background:#8e44ad;color:white;border-radius:5px;padding:2px 8px;font-size:11px;">${d[it.k]}</span>
-                <span style="margin-left:auto;font-size:10px;color:#27ae60;" id="chk_status_${it.k}">Sera fornecido</span>
+    const item = _epiInboxMap[i]; if(!item) return;
+    _epiAprovandoIdx = i;
+    const d = item.data;
+    const nomeEl = document.getElementById('modalAprovarEpiNome');
+    if(nomeEl) nomeEl.innerHTML = `<i class="fas fa-user"></i> ${d.nomeCompleto||d.nome||'?'} <span style="color:#888;font-weight:400;font-size:12px;">(${d.matricula})</span>`;
+    const itensEl = document.getElementById('modalAprovarEpiItens');
+    if(itensEl) {
+        const itensReq = EPI_ITEMS.filter(it => d[it.k]);
+        itensEl.innerHTML = itensReq.map(it => `
+            <label class="epi-item-chk">
+                <input type="checkbox" id="chk_${it.k}" checked onchange="this.closest('label').style.opacity=this.checked?'1':'0.5'">
+                <i class="${it.ico}" style="color:#8e44ad;font-size:15px;"></i>
+                <span style="font-weight:800;min-width:60px;">${it.lbl}:</span>
+                <span style="background:#8e44ad;color:white;border-radius:5px;padding:2px 9px;font-size:12px;">${d[it.k]}</span>
+                <span style="margin-left:auto;font-size:11px;color:#27ae60;font-weight:700;">Sera fornecido</span>
             </label>`).join('');
-        // Marca todos como checked inicialmente
-        itensReq.forEach(it=>{const chk=document.getElementById('chk_'+it.k);if(chk)chk.checked=true;});
     }
+    const btn = document.getElementById('btnConfirmarAprEpi');
+    if(btn) { btn.disabled=false; btn.innerHTML='<i class="fas fa-check"></i> Confirmar Aprovacao'; }
     document.getElementById('modalAprovarEpi').style.display='flex';
 };
 
-window.toggleEpiChk = function(key, lbl) {
-    const chk=document.getElementById('chk_'+key);
-    const status=document.getElementById('chk_status_'+key);
-    if(!chk) return;
-    // Clique no label: toggle
-    if(lbl===chk.closest('label')){/* keep native checkbox behavior */}
-    if(chk.checked){
-        if(lbl) lbl.classList.add('checked');
-        if(status){status.textContent='Sera fornecido';status.style.color='#27ae60';}
-    } else {
-        if(lbl) lbl.classList.remove('checked');
-        if(status){status.textContent='Ja possui / nao fornecido';status.style.color='#e67e22';}
-    }
-};
-
+// ── APROVAR — UI instantânea + escrita async ───────────────────
 window.confirmarAprovacaoEpi = async function() {
-    const item=_epiInboxMap[_epiAprovandoIdx]; if(!item) return;
-    const d=item.data;
-    // Coleta apenas os itens marcados
-    const itensFornecidos={};
-    EPI_ITEMS.forEach(it=>{
-        const chk=document.getElementById('chk_'+it.k);
-        if(chk&&chk.checked&&d[it.k]) itensFornecidos[it.k]=d[it.k];
-        else itensFornecidos[it.k]='-';
+    const item = _epiInboxMap[_epiAprovandoIdx]; if(!item) return;
+    const btn = document.getElementById('btnConfirmarAprEpi');
+    if(btn) { btn.disabled=true; btn.innerHTML='<i class="fas fa-circle-notch fa-spin"></i> Salvando...'; }
+    const d = item.data;
+    const fornecidos = {};
+    EPI_ITEMS.forEach(it => {
+        const chk = document.getElementById('chk_'+it.k);
+        fornecidos[it.k] = (chk && chk.checked && d[it.k]) ? d[it.k] : '-';
     });
-    // Salva no Firebase
-    let regs=(await window.getFromDB('epi_registros'))||[];
-    regs.unshift({
-        id:Date.now(), mat:d.matricula,
-        nome:d.nomeCompleto||d.nome||'',
-        blusa:itensFornecidos.blusa, calca:itensFornecidos.calca,
-        bermuda:itensFornecidos.bermuda, casaco:itensFornecidos.casaco,
-        bota:itensFornecidos.bota, luva:itensFornecidos.luva,
-        cinta:itensFornecidos.cinta,
-        dataAprov:new Date().toLocaleDateString('pt-BR'),
-        status:'aprovado', dataEntrega:''
-    });
-    await window.saveToDB('epi_registros', regs);
-    try{await dbCloud.collection('logistica_epi_inbox').doc(item.id).update({status:'APROVADO'});}catch(e){}
+    const temAlgum = Object.values(fornecidos).some(v => v !== '-');
+    if(!temAlgum) {
+        alert('Selecione pelo menos um item para fornecer!');
+        if(btn) { btn.disabled=false; btn.innerHTML='<i class="fas fa-check"></i> Confirmar Aprovacao'; }
+        return;
+    }
+    // Novo registro para o cache
+    const novoReg = {
+        id: 'temp_'+Date.now(), // ID temporário até o Firestore confirmar
+        mat: d.matricula,
+        nome: d.nomeCompleto||d.nome||'',
+        blusa:fornecidos.blusa, calca:fornecidos.calca, bermuda:fornecidos.bermuda,
+        casaco:fornecidos.casaco, bota:fornecidos.bota, luva:fornecidos.luva,
+        cinta:fornecidos.cinta,
+        dataAprov: new Date().toLocaleDateString('pt-BR'),
+        dataAprovTs: Date.now(),
+        status: 'aprovado', dataEntrega: ''
+    };
+    // 1. Atualiza cache instantaneamente
+    if(_epiCache.docs) { _epiCache.docs.unshift(novoReg); }
+    // 2. Fecha modal e atualiza UI imediatamente (sem esperar Firestore)
     document.getElementById('modalAprovarEpi').style.display='none';
-    loadEpiInbox(); renderEpiTable();
-    alert('Aprovado e salvo na nuvem!');
+    renderEpiTableFromCache();
+    // Remove item da inbox visualmente
+    const inboxItem = document.querySelector(`[data-inbox="${_epiAprovandoIdx}"]`);
+    if(inboxItem) inboxItem.remove();
+    // 3. Grava no Firestore em background (não bloqueia o UI)
+    try {
+        const [snapReg] = await Promise.all([
+            dbCloud.collection('logistica_epi_registros').add({
+                inboxId: item.id,
+                mat: novoReg.mat, nome: novoReg.nome,
+                blusa:novoReg.blusa, calca:novoReg.calca, bermuda:novoReg.bermuda,
+                casaco:novoReg.casaco, bota:novoReg.bota, luva:novoReg.luva,
+                cinta:novoReg.cinta,
+                dataAprov: novoReg.dataAprov,
+                dataAprovTs: novoReg.dataAprovTs,
+                status: 'aprovado', dataEntrega: ''
+            }),
+            dbCloud.collection('logistica_epi_inbox').doc(item.id).update({status:'APROVADO'})
+        ]);
+        // Atualiza ID temporário no cache com o ID real do Firestore
+        if(_epiCache.docs) {
+            const idx = _epiCache.docs.findIndex(r => r.id === novoReg.id);
+            if(idx >= 0) _epiCache.docs[idx].id = snapReg.id;
+        }
+    } catch(e) {
+        console.warn('EPI save error:', e);
+        // Remove do cache se falhou
+        if(_epiCache.docs) {
+            _epiCache.docs = _epiCache.docs.filter(r => r.id !== novoReg.id);
+        }
+        renderEpiTableFromCache();
+        alert('Erro ao salvar: ' + e.message);
+        return;
+    }
+    // Recarrega inbox para remover o item aprovado
+    loadEpiInbox(true);
 };
 
 window.rejeitarEpi = async function(i) {
-    const item=_epiInboxMap[i]; if(!item||!confirm('Rejeitar toda esta solicitacao?')) return;
-    try{await dbCloud.collection('logistica_epi_inbox').doc(item.id).update({status:'REJEITADO'});}catch(e){}
-    loadEpiInbox();
+    const item = _epiInboxMap[i]; if(!item||!confirm('Rejeitar esta solicitacao?')) return;
+    try { await dbCloud.collection('logistica_epi_inbox').doc(item.id).update({status:'REJEITADO'}); } catch(e){}
+    loadEpiInbox(true);
 };
 
-// ── Confirmar entrega ────────────────────────────────────────
-window.confirmarEntregaEpi = async function(i) {
-    if(!confirm('Confirmar a entrega fisica dos itens para este colaborador?')) return;
-    let regs=(await window.getFromDB('epi_registros'))||[];
-    if(!regs[i]) return;
-    regs[i].status='entregue';
-    regs[i].dataEntrega=new Date().toLocaleDateString('pt-BR');
-    await window.saveToDB('epi_registros', regs);
-    renderEpiTable();
-    alert('Entrega confirmada!');
+// ── Confirmar entrega — OPTIMISTIC UI ─────────────────────────
+window.confirmarEntregaEpi = async function(docId) {
+    if(!confirm('Confirmar a entrega fisica dos itens?')) return;
+    const dataEntrega = new Date().toLocaleDateString('pt-BR');
+    // 1. Atualiza cache e tela instantaneamente
+    if(_epiCache.docs) {
+        const reg = _epiCache.docs.find(r => r.id === docId);
+        if(reg) { reg.status='entregue'; reg.dataEntrega=dataEntrega; }
+    }
+    renderEpiTableFromCache();
+    // 2. Escreve no Firestore em background
+    try {
+        await dbCloud.collection('logistica_epi_registros').doc(docId).update({status:'entregue', dataEntrega});
+    } catch(e) {
+        alert('Erro ao salvar entrega: '+e.message);
+        _epiCache.docs = null; // invalida cache em caso de erro
+        renderEpiTable(true);
+    }
 };
 
-// ── Tabela de registros ──────────────────────────────────────
-window.renderEpiTable = async function() {
-    const tb=document.getElementById('tbEpi'); if(!tb) return;
-    tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:15px;color:#999;"><i class="fas fa-circle-notch fa-spin"></i> Carregando da nuvem...</td></tr>';
-    let regs=[];
-    try{regs=(await window.getFromDB('epi_registros'))||[];}catch(e){}
-    const filterSel=document.getElementById('epiFilterStatus');
-    const filter=filterSel?filterSel.value:'all';
-    const filtered=filter==='all'?regs:regs.filter(r=>r.status===filter);
-    const cnt=document.getElementById('epiRegCount'); if(cnt) cnt.textContent=regs.length;
-    const entgCnt=document.getElementById('epiEntregCount'); if(entgCnt) entgCnt.textContent=regs.filter(r=>r.status==='entregue').length+' entregues';
-    if(!filtered.length){tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:25px;color:#999;">Nenhum registro encontrado.</td></tr>';return;}
-    const sz=v=>(!v||v==='-')?'<span style="color:#ccc;">-</span>':`<span style="background:#e8daef;color:#6c3483;padding:2px 7px;border-radius:4px;font-weight:700;font-size:10px;">${v}</span>`;
-    // Map filtered index back to original index for actions
-    const origIndexes=filter==='all'?filtered.map((_,i)=>i):regs.map((r,i)=>({r,i})).filter(x=>x.r.status===filter).map(x=>x.i);
-    tb.innerHTML=filtered.map((x,fi)=>{
-        const oi=origIndexes[fi];
-        const isEntregue=x.status==='entregue';
-        const statusBadge=isEntregue
-            ?`<span class="epi-badge-entg"><i class="fas fa-check-double"></i> Entregue ${x.dataEntrega||''}</span>`
-            :`<span class="epi-badge-apr"><i class="fas fa-box"></i> Aguard. Entrega</span>`;
-        const acoes=isEntregue
-            ?`<button onclick="excluirEpiReg(${oi})" style="background:#e74c3c;color:white;border:none;border-radius:4px;padding:3px 8px;font-size:10px;font-weight:700;cursor:pointer;" title="Excluir"><i class="fas fa-trash"></i></button>`
-            :`<button onclick="confirmarEntregaEpi(${oi})" style="background:#27ae60;color:white;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;" title="Confirmar entrega fisica"><i class="fas fa-box-open"></i> Entregar</button>
-              <button onclick="excluirEpiReg(${oi})" style="background:#e74c3c;color:white;border:none;border-radius:4px;padding:5px 8px;font-size:10px;font-weight:700;cursor:pointer;margin-left:4px;" title="Excluir"><i class="fas fa-trash"></i></button>`;
-        const rowClass=isEntregue?'epi-reg-row-entg':'epi-reg-row-pend';
-        return `<tr class="${rowClass}"><td style="text-align:left;font-weight:700;white-space:nowrap;">${x.nome}</td><td style="text-align:left;color:#777;font-size:10px;">${x.mat}</td><td>${sz(x.blusa)}</td><td>${sz(x.calca)}</td><td>${sz(x.bermuda)}</td><td>${sz(x.casaco)}</td><td>${sz(x.bota)}</td><td>${sz(x.luva)}</td><td>${sz(x.cinta)}</td><td style="color:#777;font-size:10px;white-space:nowrap;">${x.dataAprov||x.data||''}</td><td>${statusBadge}</td><td style="white-space:nowrap;">${acoes}</td></tr>`;
+// ── Tabela: CACHE primeiro, Firestore só quando necessário ─────
+window.renderEpiTable = async function(forceRefresh) {
+    const now = Date.now();
+    const cacheValido = _epiCache.docs && (now - _epiCache.ts) < _epiCache.TTL;
+    if(!forceRefresh && cacheValido) {
+        renderEpiTableFromCache();
+        return;
+    }
+    // Busca do Firestore
+    const tb = document.getElementById('tbEpi'); if(!tb) return;
+    if(!cacheValido) tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:12px;color:#999;"><i class="fas fa-circle-notch fa-spin"></i> Atualizando...</td></tr>';
+    try {
+        const snap = await dbCloud.collection('logistica_epi_registros').get();
+        const docs = [];
+        snap.forEach(d => docs.push({id:d.id, ...d.data()}));
+        docs.sort((a,b) => (b.dataAprovTs||0) - (a.dataAprovTs||0));
+        _epiCache.docs = docs;
+        _epiCache.ts   = Date.now();
+    } catch(e) {
+        if(!_epiCache.docs) { tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:20px;color:#e74c3c;">Erro ao carregar. Verifique conexao.</td></tr>'; return; }
+    }
+    renderEpiTableFromCache();
+};
+
+// Renderiza a tabela do cache (sem ir ao Firestore — instantâneo)
+window.renderEpiTableFromCache = function() {
+    const tb = document.getElementById('tbEpi'); if(!tb) return;
+    const docs = _epiCache.docs || [];
+    const filterSel = document.getElementById('epiFilterStatus');
+    const filter = filterSel ? filterSel.value : 'all';
+    const filtered = filter === 'all' ? docs : docs.filter(r => r.status === filter);
+    const cnt  = document.getElementById('epiRegCount');  if(cnt)  cnt.textContent  = docs.length;
+    const ecnt = document.getElementById('epiEntregCount'); if(ecnt) ecnt.textContent = docs.filter(r=>r.status==='entregue').length+' entregues';
+    if(!filtered.length) { tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:20px;color:#999;">Nenhum registro encontrado.</td></tr>'; return; }
+    const sz = v => (!v||v==='-') ? '<span style="color:#ccc;">-</span>' : `<span style="background:#e8daef;color:#6c3483;padding:2px 7px;border-radius:4px;font-weight:700;font-size:10px;">${v}</span>`;
+    tb.innerHTML = filtered.map(x => {
+        const isEntregue = x.status === 'entregue';
+        const statusBadge = isEntregue
+            ? `<span class="epi-badge-entg"><i class="fas fa-check-double"></i> Entregue ${x.dataEntrega||''}</span>`
+            : `<span class="epi-badge-pend"><i class="fas fa-box"></i> Aguard. Entrega</span>`;
+        const acoes = isEntregue
+            ? `<button onclick="excluirEpiReg('${x.id}')" style="background:#e74c3c;color:white;border:none;border-radius:4px;padding:3px 8px;font-size:10px;font-weight:700;cursor:pointer;"><i class="fas fa-trash"></i></button>`
+            : `<button onclick="confirmarEntregaEpi('${x.id}')" style="background:#27ae60;color:white;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;"><i class="fas fa-box-open"></i> Entregar</button> <button onclick="excluirEpiReg('${x.id}')" style="background:#e74c3c;color:white;border:none;border-radius:4px;padding:5px 8px;font-size:10px;font-weight:700;cursor:pointer;margin-left:4px;"><i class="fas fa-trash"></i></button>`;
+        return `<tr class="${isEntregue?'epi-reg-row-entg':''}"><td style="text-align:left;font-weight:700;white-space:nowrap;">${x.nome}</td><td style="text-align:left;color:#777;font-size:10px;">${x.mat}</td><td>${sz(x.blusa)}</td><td>${sz(x.calca)}</td><td>${sz(x.bermuda)}</td><td>${sz(x.casaco)}</td><td>${sz(x.bota)}</td><td>${sz(x.luva)}</td><td>${sz(x.cinta)}</td><td style="color:#777;font-size:10px;white-space:nowrap;">${x.dataAprov||''}</td><td>${statusBadge}</td><td style="white-space:nowrap;">${acoes}</td></tr>`;
     }).join('');
 };
 
-window.excluirEpiReg = async function(i) {
+window.excluirEpiReg = async function(docId) {
     if(!confirm('Excluir este registro permanentemente?')) return;
-    let regs=(await window.getFromDB('epi_registros'))||[];
-    regs.splice(i,1);
-    await window.saveToDB('epi_registros',regs);
-    renderEpiTable();
+    // Optimistic: remove do cache e tela imediatamente
+    if(_epiCache.docs) { _epiCache.docs = _epiCache.docs.filter(r => r.id !== docId); }
+    renderEpiTableFromCache();
+    try { await dbCloud.collection('logistica_epi_registros').doc(docId).delete(); } catch(e) {
+        alert('Erro ao excluir: '+e.message);
+        _epiCache.docs = null; renderEpiTable(true); // recarrega em caso de erro
+    }
 };
 
 window.filterEpiTable = function() {
-    const q=(document.getElementById('epiSearchInput').value||'').toLowerCase();
-    document.querySelectorAll('#tbEpi tr').forEach(row=>{row.style.display=q===''||row.textContent.toLowerCase().includes(q)?'':'none';});
+    const q = (document.getElementById('epiSearchInput').value||'').toLowerCase();
+    document.querySelectorAll('#tbEpi tr').forEach(row => { row.style.display = q===''||row.textContent.toLowerCase().includes(q) ? '' : 'none'; });
 };
 
 window.exportEpiExcel = async function() {
-    try{
-        const regs=(await window.getFromDB('epi_registros'))||[];
-        if(!regs.length){alert('Nenhum registro para exportar.');return;}
-        const rows=[['Colaborador','Matricula','Blusa','Calca','Bermuda','Casaco','Bota','Luva','Cinta','Data Aprovacao','Status','Data Entrega']];
-        regs.forEach(x=>rows.push([x.nome,x.mat,x.blusa,x.calca,x.bermuda,x.casaco,x.bota,x.luva,x.cinta,x.dataAprov||x.data||'',x.status==='entregue'?'Entregue':'Aguardando Entrega',x.dataEntrega||'']));
-        const wb=XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Uniforme_EPI');
-        XLSX.writeFile(wb,'Uniforme_EPI_'+new Date().toISOString().slice(0,10)+'.xlsx');
-    }catch(e){alert('Erro:'+e.message);}
+    try {
+        // Usa cache se disponível, senão busca
+        let docs = _epiCache.docs;
+        if(!docs) {
+            const snap = await dbCloud.collection('logistica_epi_registros').get();
+            docs = []; snap.forEach(d => docs.push(d.data()));
+            docs.sort((a,b)=>(b.dataAprovTs||0)-(a.dataAprovTs||0));
+        }
+        if(!docs.length) { alert('Nenhum registro para exportar.'); return; }
+        const rows = [['Colaborador','Matricula','Blusa','Calca','Bermuda','Casaco','Bota','Luva','Cinta','Data Aprovacao','Status','Data Entrega']];
+        docs.forEach(x => rows.push([x.nome,x.mat,x.blusa,x.calca,x.bermuda,x.casaco,x.bota,x.luva,x.cinta,x.dataAprov||'',x.status==='entregue'?'Entregue':'Aguardando Entrega',x.dataEntrega||'']));
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Uniforme_EPI');
+        XLSX.writeFile(wb, 'Uniforme_EPI_'+new Date().toISOString().slice(0,10)+'.xlsx');
+    } catch(e) { alert('Erro: '+e.message); }
 };
 
 window.updatePublicFormFields = function() { const sel = document.getElementById('pf_colab_select'); if(!sel.value) return; document.getElementById('pf_mat').value = sel.value; document.getElementById('pf_nome').value = sel.options[sel.selectedIndex].text; };
@@ -1773,8 +1859,8 @@ async function submitPublicForm() { const nome = document.getElementById('pf_nom
             if(document.getElementById('btnExitTV')) document.getElementById('btnExitTV').style.display = 'none';
             document.getElementById('publicFormWrapper').style.display = 'block';
             ['epi-pub-form','pf-form-view','pf-success-view'].forEach(id => {
-                const el=document.getElementById(id);
-                if(el) el.style.display=(id==='epi-pub-form')?'block':'none';
+                const el = document.getElementById(id);
+                if(el) el.style.display = (id === 'epi-pub-form') ? 'block' : 'none';
             });
             loadEpiColabs();
         }

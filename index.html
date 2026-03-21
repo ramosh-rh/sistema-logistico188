@@ -95,19 +95,12 @@
 .epi-inbox-name{font-size:14px;font-weight:800;color:#2c3e50;margin-bottom:8px;}
 .epi-inbox-sizes{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;}
 .epi-sz-tag{background:#f0eafb;color:#6c3483;padding:3px 8px;border-radius:5px;font-size:11px;font-weight:700;}
-/* Checkboxes de aprovação parcial */
-.epi-item-checks{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;}
-.epi-item-chk{display:flex;align-items:center;gap:5px;background:#f9f5ff;border:1px solid #d7bde2;border-radius:7px;padding:5px 10px;cursor:pointer;font-size:12px;font-weight:700;color:#555;transition:all .15s;}
+.epi-item-chk{display:flex;align-items:center;gap:8px;background:#f9f5ff;border:1px solid #d7bde2;border-radius:7px;padding:8px 12px;cursor:pointer;font-size:13px;font-weight:700;color:#555;transition:all .15s;margin-bottom:6px;}
 .epi-item-chk:hover{border-color:#8e44ad;background:#ede7f6;}
-.epi-item-chk input[type=checkbox]{accent-color:#8e44ad;width:15px;height:15px;cursor:pointer;}
-.epi-item-chk.checked{background:#ede7f6;border-color:#8e44ad;color:#6c3483;}
-/* Status badges */
-.epi-badge-pend{background:#fff3cd;color:#856404;padding:3px 9px;border-radius:10px;font-size:10px;font-weight:800;}
-.epi-badge-apr{background:#d5f5e3;color:#1a7a3c;padding:3px 9px;border-radius:10px;font-size:10px;font-weight:800;}
-.epi-badge-entg{background:#d6eaf8;color:#1a5276;padding:3px 9px;border-radius:10px;font-size:10px;font-weight:800;}
-/* Tabela registros */
-.epi-reg-row-pend td{background:#fffdf0;}
-.epi-reg-row-entg td{background:#f0fff4;}
+.epi-item-chk input[type=checkbox]{accent-color:#8e44ad;width:16px;height:16px;cursor:pointer;flex-shrink:0;}
+.epi-badge-pend{background:#fff3cd;color:#856404;padding:3px 9px;border-radius:10px;font-size:10px;font-weight:800;white-space:nowrap;}
+.epi-badge-entg{background:#d5f5e3;color:#1a7a3c;padding:3px 9px;border-radius:10px;font-size:10px;font-weight:800;white-space:nowrap;}
+.epi-reg-row-entg td{background:#f0fff4 !important;}
 </style>
 </head>
 <body>
@@ -495,7 +488,6 @@
             </div>
         </div>
 
-        <!-- UNIFORME & EPI -->
         <div id="view-rh-uniforme" class="view-section">
             <div class="scroll-content">
                 <div class="card" style="border-left:5px solid #8e44ad;background:linear-gradient(135deg,#f9f5ff,#fff);margin-bottom:14px;">
@@ -507,34 +499,29 @@
                         <div style="display:flex;gap:8px;flex-wrap:wrap;">
                             <button class="btn" style="background:#25d366;color:white;" onclick="copyEpiFormLink()"><i class="fab fa-whatsapp"></i> LINK WHATSAPP</button>
                             <button class="btn btn-blue" onclick="window.open(window.location.href.split('?')[0]+'?mode=formepi','_blank')"><i class="fas fa-external-link-alt"></i> TESTAR</button>
-                            <button class="btn btn-blue" onclick="renderEpiTab()"><i class="fas fa-sync-alt"></i> Atualizar</button>
+                            <button class="btn btn-blue" onclick="renderEpiTab(true)"><i class="fas fa-sync-alt"></i> Atualizar</button>
                             <button class="btn btn-green" onclick="exportEpiExcel()"><i class="fas fa-file-excel"></i> Excel</button>
                         </div>
                     </div>
                 </div>
-
-                <!-- CAIXA DE ENTRADA -->
                 <div class="inbox-card" style="border-left-color:#8e44ad;margin-bottom:15px;">
                     <div class="inbox-header" style="color:#8e44ad;">
-                        <span><i class="fab fa-whatsapp"></i> Solicitacoes Pendentes de Aprovacao</span>
-                        <button class="btn-sm btn-blue" onclick="loadEpiInbox()"><i class="fas fa-sync-alt"></i> Atualizar</button>
+                        <span><i class="fab fa-whatsapp"></i> Solicitacoes Pendentes</span>
+                        <button class="btn-sm btn-blue" onclick="loadEpiInbox(true)"><i class="fas fa-sync-alt"></i> Atualizar</button>
                     </div>
                     <div id="epiInboxBody"><div style="padding:20px;text-align:center;color:#999;font-size:12px;">Nenhuma solicitacao pendente.</div></div>
                 </div>
-
-                <!-- REGISTROS -->
                 <div class="card" style="border-left:5px solid #8e44ad;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
                         <div style="display:flex;align-items:center;gap:10px;">
                             <h4 style="margin:0;color:#8e44ad;"><i class="fas fa-clipboard-list"></i> Registros</h4>
                             <span id="epiRegCount" style="background:#8e44ad;color:white;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:700;">0</span>
-                            <span style="font-size:11px;color:#666;">|</span>
                             <span id="epiEntregCount" style="background:#27ae60;color:white;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:700;">0 entregues</span>
                         </div>
                         <div style="display:flex;gap:8px;align-items:center;">
-                            <select id="epiFilterStatus" onchange="renderEpiTable()" style="padding:5px 8px;border:1px solid #ddd;border-radius:6px;font-size:12px;">
+                            <select id="epiFilterStatus" onchange="renderEpiTableFromCache()" style="padding:5px 8px;border:1px solid #ddd;border-radius:6px;font-size:12px;">
                                 <option value="all">Todos</option>
-                                <option value="aprovado">Aguardando Entrega</option>
+                                <option value="aprovado">Aguard. Entrega</option>
                                 <option value="entregue">Entregues</option>
                             </select>
                             <input type="text" id="epiSearchInput" placeholder="Buscar..." oninput="filterEpiTable()" style="padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:12px;width:160px;">
@@ -544,16 +531,11 @@
                         <thead><tr style="background:#f0eafb;">
                             <th style="text-align:left;min-width:160px;">Colaborador</th>
                             <th style="text-align:left;min-width:80px;">Matricula</th>
-                            <th><i class="fas fa-tshirt"></i> Blusa</th>
-                            <th><i class="fas fa-male"></i> Calca</th>
-                            <th><i class="fas fa-cut"></i> Bermuda</th>
-                            <th><i class="fas fa-mitten"></i> Casaco</th>
-                            <th><i class="fas fa-shoe-prints"></i> Bota</th>
-                            <th><i class="fas fa-hand-paper"></i> Luva</th>
+                            <th><i class="fas fa-tshirt"></i> Blusa</th><th><i class="fas fa-male"></i> Calca</th>
+                            <th><i class="fas fa-cut"></i> Bermuda</th><th><i class="fas fa-mitten"></i> Casaco</th>
+                            <th><i class="fas fa-shoe-prints"></i> Bota</th><th><i class="fas fa-hand-paper"></i> Luva</th>
                             <th><i class="fas fa-life-ring"></i> Cinta</th>
-                            <th>Data Aprv.</th>
-                            <th>Status</th>
-                            <th>Acoes</th>
+                            <th>Data Aprv.</th><th>Status</th><th>Acoes</th>
                         </tr></thead>
                         <tbody id="tbEpi"><tr><td colspan="12" style="text-align:center;padding:25px;color:#999;"><i class="fas fa-circle-notch fa-spin"></i> Carregando...</td></tr></tbody>
                     </table></div>
@@ -1594,18 +1576,17 @@ function initPatchV164() {
 </script>
 
 
-<!-- Modal aprovacao EPI por item -->
 <div id="modalAprovarEpi" class="modal-overlay" style="display:none;">
-    <div class="modal" style="width:520px;max-height:90vh;overflow-y:auto;">
+    <div class="modal" style="width:500px;max-height:90vh;overflow-y:auto;">
         <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #8e44ad;padding-bottom:10px;margin-bottom:15px;">
             <h3 style="margin:0;color:#8e44ad;"><i class="fas fa-vest"></i> Aprovar Solicitacao EPI</h3>
             <button onclick="document.getElementById('modalAprovarEpi').style.display='none'" style="background:none;border:none;font-size:24px;cursor:pointer;color:#999;">&times;</button>
         </div>
-        <div id="modalAprovarEpiNome" style="background:#f9f5ff;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:14px;font-weight:700;color:#6c3483;"></div>
-        <p style="font-size:12px;color:#666;margin:0 0 12px;"><i class="fas fa-info-circle" style="color:#8e44ad;"></i> Desmarque os itens que o colaborador <strong>ja possui</strong> ou que nao serao fornecidos:</p>
-        <div id="modalAprovarEpiItens" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;"></div>
+        <div id="modalAprovarEpiNome" style="background:#f9f5ff;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:14px;font-weight:700;color:#6c3483;"></div>
+        <p style="font-size:12px;color:#555;margin:0 0 12px;background:#fff3cd;padding:8px 12px;border-radius:6px;border-left:3px solid #f39c12;"><i class="fas fa-info-circle" style="color:#f39c12;"></i> <strong>Desmarque</strong> os itens que o colaborador ja possui ou que nao serao fornecidos.</p>
+        <div id="modalAprovarEpiItens" style="margin-bottom:16px;"></div>
         <div style="display:flex;gap:10px;border-top:1px solid #eee;padding-top:14px;">
-            <button onclick="confirmarAprovacaoEpi()" style="flex:1;padding:12px;background:linear-gradient(135deg,#27ae60,#2ecc71);color:white;border:none;border-radius:8px;font-size:14px;font-weight:800;cursor:pointer;"><i class="fas fa-check"></i> Confirmar Aprovacao</button>
+            <button id="btnConfirmarAprEpi" onclick="confirmarAprovacaoEpi()" style="flex:1;padding:12px;background:linear-gradient(135deg,#27ae60,#2ecc71);color:white;border:none;border-radius:8px;font-size:14px;font-weight:800;cursor:pointer;"><i class="fas fa-check"></i> Confirmar Aprovacao</button>
             <button onclick="document.getElementById('modalAprovarEpi').style.display='none'" style="padding:12px 20px;background:#95a5a6;color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">Cancelar</button>
         </div>
     </div>
