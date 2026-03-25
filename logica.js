@@ -515,34 +515,64 @@ document.getElementById('f_rh').addEventListener('change', function () {
 window.renderRHQuad = function() {
     const tb = document.querySelector('#tbRH'); if (!tb) return;
     tb.innerHTML = ''; if (dRH.length === 0) { tb.innerHTML = '<tr><td colspan="5">Nenhum colaborador registado.</td></tr>'; return; }
-    let ativos = 0, lideres = 0, ops = 0;
+
+    // Contadores — todos os não-inativos são contados por função
+    let ativos = 0, lideres = 0, ops = 0, sups = 0;
+
     dRH.forEach((r, index) => {
-        const mat = r['Matrícula'] || r['Matricula'] || r['MATRICULA'] || '-';
-        const nome = r['Nome'] || r['NOME'] || '-'; if (nome === '-' && mat === '-') return;
-        const func = r['Função'] || r['Funcao'] || r['FUNÇÃO'] || '-';
+        const mat  = r['Matrícula'] || r['Matricula'] || r['MATRICULA'] || '-';
+        const nome = r['Nome'] || r['NOME'] || '-';
+        if (nome === '-' && mat === '-') return;
+        const func = (r['Função'] || r['Funcao'] || r['FUNÇÃO'] || '-').toUpperCase();
+
         let baseStatus = (r['Status'] || r['STATUS'] || 'ATIVO').toUpperCase();
-        ensureRhData(mat); let rh = rhData[mat]; let statusFinal = baseStatus;
-        if (rh.statusManual && rh.statusManual !== 'AUTO') { statusFinal = rh.statusManual; }
+        ensureRhData(mat);
+        let rh = rhData[mat];
+        let statusFinal = (rh.statusManual && rh.statusManual !== 'AUTO') ? rh.statusManual.toUpperCase() : baseStatus;
+
+        // Detecta férias automaticamente pelo período cadastrado
         if (statusFinal === 'ATIVO' && rh.feriasInicio && rh.feriasFim) {
-            const today = new Date(); today.setHours(0,0,0,0); const fIn = new Date(rh.feriasInicio + "T00:00:00"); const fFim = new Date(rh.feriasFim + "T00:00:00");
-            if (today >= fIn && today <= fFim) { statusFinal = 'FÉRIAS'; }
+            const today = new Date(); today.setHours(0,0,0,0);
+            const fIn  = new Date(rh.feriasInicio + 'T00:00:00');
+            const fFim = new Date(rh.feriasFim    + 'T00:00:00');
+            if (today >= fIn && today <= fFim) statusFinal = 'FÉRIAS';
         }
-        if (statusFinal === 'ATIVO') ativos++;
-        if (statusFinal === 'ATIVO' || statusFinal === 'FÉRIAS' || statusFinal === 'TRANSFERENCIA DE TURNO') {
-            if (func.toUpperCase().includes('LIDER') || func.toUpperCase().includes('LÍDER')) lideres++;
-            if (func.toUpperCase().includes('OPERADOR')) ops++;
-        }
-        let statusBadge = '';
-        if (statusFinal === 'ATIVO') statusBadge = `<span style="background:#e8f5e9; color:#2e7d32; padding:4px 10px; border-radius:12px; font-weight:900; font-size:10px;">ATIVO</span>`;
-        else if (statusFinal === 'FÉRIAS') statusBadge = `<span style="background:#fff3cd; color:#856404; padding:4px 10px; border-radius:12px; font-weight:900; font-size:10px;"><i class="fas fa-umbrella-beach"></i> EM FÉRIAS</span>`;
-        else if (statusFinal === 'AFASTADO') statusBadge = `<span style="background:#fdf5e6; color:#e67e22; padding:4px 10px; border-radius:12px; font-weight:900; font-size:10px;">AFASTADO</span>`;
-        else if (statusFinal === 'TRANSFERENCIA DE TURNO') statusBadge = `<span style="background:#e0f7fa; color:#00838f; padding:4px 10px; border-radius:12px; font-weight:900; font-size:10px;"><i class="fas fa-exchange-alt"></i> TRANSF. TURNO</span>`;
-        else statusBadge = `<span style="background:#ffebeb; color:#c0392b; padding:4px 10px; border-radius:12px; font-weight:900; font-size:10px;">${statusFinal}</span>`;
+
+        // INATIVO: não conta em nenhum KPI, não aparece na tabela
+        if (statusFinal === 'INATIVO') return;
+
+        // KPIs — todos os não-inativos contam (ATIVO, FÉRIAS, AFASTADO, etc.)
+        ativos++;   // "Total Ativos" = total de não-inativos no quadro
+
+        // Classificação por função
+        if (func.includes('SUPERVISOR') || func.includes('SUPERVISORA')) sups++;
+        else if (func.includes('LIDER') || func.includes('LÍDER'))       lideres++;
+        else if (func.includes('OPERADOR'))                               ops++;
+
+        // Badge de status
+        let statusBadge;
+        if      (statusFinal === 'ATIVO')                statusBadge = `<span style="background:#e8f5e9; color:#2e7d32; padding:4px 10px; border-radius:12px; font-weight:900; font-size:10px;">ATIVO</span>`;
+        else if (statusFinal === 'FÉRIAS')               statusBadge = `<span style="background:#fff3cd; color:#856404; padding:4px 10px; border-radius:12px; font-weight:900; font-size:10px;"><i class="fas fa-umbrella-beach"></i> EM FÉRIAS</span>`;
+        else if (statusFinal === 'AFASTADO')             statusBadge = `<span style="background:#fdf5e6; color:#e67e22; padding:4px 10px; border-radius:12px; font-weight:900; font-size:10px;">AFASTADO</span>`;
+        else if (statusFinal === 'TRANSFERENCIA DE SETOR' || statusFinal === 'TRANSFERENCIA DE TURNO')
+                                                         statusBadge = `<span style="background:#e0f7fa; color:#00838f; padding:4px 10px; border-radius:12px; font-weight:900; font-size:10px;"><i class="fas fa-exchange-alt"></i> TRANSFERIDO</span>`;
+        else                                             statusBadge = `<span style="background:#ffebeb; color:#c0392b; padding:4px 10px; border-radius:12px; font-weight:900; font-size:10px;">${statusFinal}</span>`;
+
         let acoes = `<button class="btn btn-blue" style="padding:4px 8px; font-size:11px;" onclick="abrirEdicaoRH(${index})"><i class="fas fa-edit"></i> Modificar</button>`;
-        tb.innerHTML += `<tr><td style="font-weight:bold;">${mat}</td><td style="text-align:left;">${nome}</td><td style="text-align:left;">${func}</td><td>${statusBadge}</td><td>${acoes}</td></tr>`;
+        tb.innerHTML += `<tr><td style="font-weight:bold;">${mat}</td><td style="text-align:left;">${nome}</td><td style="text-align:left;">${r['Função']||r['Funcao']||r['FUNÇÃO']||'-'}</td><td>${statusBadge}</td><td>${acoes}</td></tr>`;
     });
+
     document.getElementById('rh-kpis').style.display = 'grid';
-    safeUpdate('rh-tot', ativos); safeUpdate('rh-lid', lideres); safeUpdate('rh-op', ops);
+    safeUpdate('rh-tot', fmtInt(ativos));
+    safeUpdate('rh-lid', fmtInt(lideres));
+    safeUpdate('rh-op',  fmtInt(ops));
+    safeUpdate('rh-sup', fmtInt(sups));   // ← supervisor agora é atualizado
+    
+    // Atualizar KPIs na aba Colaboradores também
+    const quadroInfo = document.getElementById('quadro-info-display');
+    if (quadroInfo) {
+        quadroInfo.innerHTML = `📊 <strong>${ativos} ativos</strong> | ${sups} supervisores | ${lideres} líderes | ${ops} operadores`;
+    }
 };
 
 window.abrirModalRH = function() { document.getElementById('rhEditIndex').value = -1; document.getElementById('rhMat').value = ''; document.getElementById('rhNome').value = ''; document.getElementById('rhFunc').value = 'OPERADOR'; document.getElementById('rhAdm').value = ''; document.getElementById('rhStatus').value = 'AUTO'; document.getElementById('modalRHTitle').innerHTML = '<i class="fas fa-user-plus"></i> Novo Colaborador'; document.getElementById('modalRH').style.display = 'flex'; };
@@ -697,11 +727,86 @@ async function registrarAbs() {
     for (let i = 0; i < dias; i++) { let targetDate = new Date(baseDate.getTime() + (i * 86400000)); let brDate = targetDate.toLocaleDateString('pt-BR', { timeZone: 'UTC' }); rhData[mat].faltas.push({ data: brDate, motivo: motivo, stamp: targetDate.getTime() }); }
     rhData[mat].faltas.sort((a, b) => b.stamp - a.stamp);
     if (window.saveToDB) window.saveToDB('rhData', rhData);
-    document.getElementById('selAbsEmp').value = ''; document.getElementById('txtAbsDate').value = ''; document.getElementById('txtAbsDias').value = '1'; renderAbs();
+    document.getElementById('selAbsEmp').value = ''; document.getElementById('txtAbsDate').value = ''; document.getElementById('txtAbsDias').value = '1'; renderAbs(); renderPontoAbsConsolidado();
 }
 
-async function removeAbs(mat, idx) { if (confirm("Remover?")) { if (rhData[mat] && rhData[mat].faltas) { rhData[mat].faltas.splice(idx, 1); if (window.saveToDB) window.saveToDB('rhData', rhData); renderAbs(); } } }
+async function removeAbs(mat, idx) { if (confirm("Remover?")) { if (rhData[mat] && rhData[mat].faltas) { rhData[mat].faltas.splice(idx, 1); if (window.saveToDB) window.saveToDB('rhData', rhData); renderAbs(); renderPontoAbsConsolidado(); } } }
 
+window.renderPontoAbsConsolidado = function() {
+    const tb = document.getElementById('tbPontoAbsConsolidado');
+    if (!tb) return;
+    
+    let html = '';
+    let totalRegistros = 0;
+    
+    // Coletar todas as ocorrências (absenteísmo e ponto)
+    let ocorrencias = [];
+    
+    for (let mat in rhData) {
+        const rh = rhData[mat];
+        const emp = dRH.find(e => (e['Matrícula'] || e['Matricula'] || e['MATRICULA'] || '').toString() === mat);
+        const nome = emp ? (emp['Nome'] || emp['NOME']) : 'Desconhecido';
+        
+        // Adicionar faltas/absenteísmo
+        if (rh.faltas && rh.faltas.length > 0) {
+            rh.faltas.forEach(f => {
+                ocorrencias.push({
+                    data: f.data,
+                    stamp: f.stamp,
+                    mat: mat,
+                    nome: nome,
+                    tipo: 'Absenteísmo',
+                    descricao: f.motivo,
+                    acao: 'Registado',
+                    obs: ''
+                });
+            });
+        }
+        
+        // Adicionar ocorrências de ponto
+        if (rh.ponto && rh.ponto.length > 0) {
+            rh.ponto.forEach(p => {
+                ocorrencias.push({
+                    data: p.dataForm,
+                    stamp: p.stamp,
+                    mat: mat,
+                    nome: nome,
+                    tipo: 'Ponto',
+                    descricao: p.tipo,
+                    acao: p.acao,
+                    obs: p.obs
+                });
+            });
+        }
+    }
+    
+    // Ordenar por data decrescente
+    ocorrencias.sort((a, b) => b.stamp - a.stamp);
+    
+    // Renderizar tabela
+    if (ocorrencias.length === 0) {
+        tb.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:#999;">Nenhuma ocorrência registada.</td></tr>';
+        return;
+    }
+    
+    ocorrencias.forEach(occ => {
+        totalRegistros++;
+        let tipoColor = occ.tipo === 'Absenteísmo' ? 'background:#ffe8e8;color:#c0392b;' : 'background:#e8f4fd;color:#2980b9;';
+        let tipoIcon = occ.tipo === 'Absenteísmo' ? '<i class="fas fa-ban"></i>' : '<i class="fas fa-clock"></i>';
+        
+        html += `<tr style="border-bottom:1px solid #eee;">
+            <td style="font-weight:bold; font-size:12px;">${occ.data}</td>
+            <td style="text-align:left; font-size:12px;"><b>${occ.nome}</b><br><span style="font-size:9px; color:#888;">${occ.mat}</span></td>
+            <td style="font-size:11px; ${tipoColor}">${tipoIcon} ${occ.tipo}</td>
+            <td style="text-align:left; font-size:11px;">${occ.descricao}<br><span style="font-size:10px; color:#777; font-weight:normal;">${occ.obs || ''}</span></td>
+            <td><span style="padding:3px 6px; border-radius:4px; font-size:10px; font-weight:bold; background:#f0f0f0; color:#555;">${occ.acao}</span></td>
+        </tr>`;
+    });
+    
+    tb.innerHTML = html;
+    const cnt = document.getElementById('pontoAbsCount');
+    if (cnt) cnt.textContent = totalRegistros + ' ocorrência(s)';
+};
 
 // =========================================================================
 // PLANEJAMENTO E COLUNAS  (CORREÇÕES DE DINÂMICA)
@@ -1215,40 +1320,17 @@ function verificarLogin() {
     // Se é modo formulário público, NUNCA mostrar login nem sistema
     const urlP = new URLSearchParams(window.location.search);
     if (urlP.get('mode') === 'formferias') {
-        const lo = document.getElementById('loginOverlay');
-        if(lo) lo.style.display = 'none';
-        const header = document.querySelector('.app-header');
-        const memBar = document.querySelector('.memory-bar');
-        const tabBar = document.querySelector('.tab-bar');
-        const cont   = document.querySelector('.container');
-        if(header) header.style.display = 'none';
-        if(memBar) memBar.style.display  = 'none';
-        if(tabBar) tabBar.style.display  = 'none';
-        if(cont)   cont.style.display    = 'none';
-        const fw = document.getElementById('publicFormWrapper');
-        if(fw) fw.style.display = 'block';
-        loadEmployeesForPublicForm();
-        return;
+        const lo = document.getElementById('loginOverlay'); if(lo) lo.style.display='none';
+        ['app-header','memory-bar','tab-bar','container'].forEach(c=>{const e=document.querySelector('.'+c)||document.getElementById(c);if(e)e.style.display='none';});
+        const fw=document.getElementById('publicFormWrapper');if(fw)fw.style.display='block';
+        loadEmployeesForPublicForm(); return;
     }
     if (urlP.get('mode') === 'formepi') {
-        const lo = document.getElementById('loginOverlay');
-        if(lo) lo.style.display = 'none';
-        const header = document.querySelector('.app-header');
-        const memBar = document.querySelector('.memory-bar');
-        const tabBar = document.querySelector('.tab-bar');
-        const cont   = document.querySelector('.container');
-        if(header) header.style.display = 'none';
-        if(memBar) memBar.style.display  = 'none';
-        if(tabBar) tabBar.style.display  = 'none';
-        if(cont)   cont.style.display    = 'none';
-        const fw = document.getElementById('publicFormWrapper');
-        if(fw) fw.style.display = 'block';
-        ['epi-pub-form','pf-form-view','pf-success-view'].forEach(id => {
-            const el = document.getElementById(id);
-            if(el) el.style.display = (id === 'epi-pub-form') ? 'block' : 'none';
-        });
-        loadEpiColabs();
-        return;
+        const lo = document.getElementById('loginOverlay'); if(lo) lo.style.display='none';
+        ['app-header','memory-bar','tab-bar','container'].forEach(c=>{const e=document.querySelector('.'+c)||document.getElementById(c);if(e)e.style.display='none';});
+        const fw=document.getElementById('publicFormWrapper');if(fw)fw.style.display='block';
+        ['epi-pub-form','pf-form-view','pf-success-view'].forEach(id=>{const e=document.getElementById(id);if(e)e.style.display=(id==='epi-pub-form')?'block':'none';});
+        loadEpiColabs(); return;
     }
     // Fluxo normal de login
     if(sessionStorage.getItem('logado') === 'sim') { 
@@ -1265,329 +1347,403 @@ function checkPassword() { const s = document.getElementById('sysPassword').valu
 async function loadEmployeesForPublicForm() { try { const savedRH = await window.getFromDB('dRH'); const sel = document.getElementById('pf_colab_select'); if(savedRH && savedRH.length > 0) { sel.innerHTML = '<option value="">-- Selecione o seu nome aqui --</option>'; const ativos = savedRH.filter(r => (r['Status']||r['STATUS']||'ATIVO').toUpperCase() !== 'INATIVO'); ativos.sort((a,b) => (a['Nome']||a['NOME']||'').localeCompare(b['Nome']||b['NOME']||'')); ativos.forEach(r => { const mat = r['Matrícula']||r['Matricula']||r['MATRICULA']; const nomeCompleto = r['Nome']||r['NOME']||''; const pts = nomeCompleto.trim().split(' '); const exib = pts.length > 1 ? pts[0]+' '+pts[1] : pts[0]; sel.innerHTML += `<option value="${mat}">${exib}</option>`; }); } else { sel.innerHTML = '<option value="">Nenhum funcionário sincronizado.</option>'; } } catch(e) { document.getElementById('pf_colab_select').innerHTML = '<option value="">Erro ao carregar lista.</option>'; } }
 
 // ================================================================
-// UNIFORME & EPI — v165.2 PERFORMANCE
+// GIRO DE ALOCAÇÃO — modulo completo
+// Valida se produtos estão no giro correto com base no endereço
+// Cruzamento: Análise de Alocação x Mapeamento de Estações
 // ================================================================
-var _epiPubSel = {blusa:'',calca:'',bermuda:'',casaco:'',bota:'',luva:'',cinta:''};
-var _epiInboxMap = {};
-var _epiAprovandoIdx = -1;
-var _epiTabBusy = false;
 
-// Cache de registros (evita ir ao Firestore a cada filtro/busca)
-var _epiCache = { docs: null, ts: 0, TTL: 90000 }; // 90s TTL
-
-var EPI_ITEMS = [
-    {k:'blusa',   lbl:'Blusa',   ico:'fas fa-tshirt'},
-    {k:'calca',   lbl:'Calca',   ico:'fas fa-male'},
-    {k:'bermuda', lbl:'Bermuda', ico:'fas fa-cut'},
-    {k:'casaco',  lbl:'Casaco',  ico:'fas fa-mitten'},
-    {k:'bota',    lbl:'Bota',    ico:'fas fa-shoe-prints'},
-    {k:'luva',    lbl:'Luva',    ico:'fas fa-hand-paper'},
-    {k:'cinta',   lbl:'Cinta',   ico:'fas fa-life-ring'}
+// ── Mapeamento de estações (configurável) ─────────────────────
+// Regra: prefixo do endereço determina a estação
+var GIRO_ESTACOES = [
+    {
+        id: 1,
+        nome: '1ª Estação',
+        descricao: 'Flowrack Perfumaria',
+        cor: 'giro-s1',
+        // Ruas 21-xx, 22-xx, 23-xx (endereços que começam com V21, V22, V23)
+        prefixos: ['V21','V22','V23','21-','22-','23-'],
+        // Subrange: 21-01-011 ao 21-25-081, 22-01 ao 22-25-081, 23-01 ao 23-25-081
+        validar: function(end) {
+            if(!end) return false;
+            var e = end.toUpperCase();
+            return (e.startsWith('V21')||e.startsWith('V22')||e.startsWith('V23')||
+                    e.startsWith('21-')||e.startsWith('22-')||e.startsWith('23-'));
+        }
+    },
+    {
+        id: 2,
+        nome: '2ª Estação',
+        descricao: 'Flowrack Secundário',
+        cor: 'giro-s2',
+        prefixos: ['V24','V25','V26','24-','25-','26-'],
+        validar: function(end) {
+            if(!end) return false;
+            var e = end.toUpperCase();
+            return (e.startsWith('V24')||e.startsWith('V25')||e.startsWith('V26')||
+                    e.startsWith('24-')||e.startsWith('25-')||e.startsWith('26-'));
+        }
+    }
 ];
 
-// ── Form publico ──────────────────────────────────────────────
-async function loadEpiColabs() {
-    const sel = document.getElementById('epi_sel'); if(!sel) return;
+// ── Estado interno ─────────────────────────────────────────────
+var _giroData      = [];   // dados brutos importados
+var _giroFiltered  = [];   // dados após filtros
+var _giroSortCol   = 'dataAlocacao';
+var _giroSortAsc   = false;
+var _giroInitialized = false;
+
+// ── Inicialização da aba ───────────────────────────────────────
+window.initGiroAlocacao = function() {
+    if(_giroInitialized && _giroData.length > 0) {
+        giroRenderAll();
+    }
+    // Configura listener de arquivo
+    var inp = document.getElementById('giro-file-alocacao');
+    if(inp && !inp._giroReady) {
+        inp._giroReady = true;
+    }
+};
+
+// ── Importação do arquivo ──────────────────────────────────────
+window.giroImportarAlocacao = async function(input) {
+    var file = input.files[0]; if(!file) return;
+    var btn = document.querySelector('[onclick*="giroAtualizar"]');
+    var statusEl = document.getElementById('giro-status-importacao');
+    var statusTxt = document.getElementById('giro-status-txt');
+
+    // Mostra loading
+    document.getElementById('giro-placeholder').style.display = 'none';
+    if(statusEl) { statusEl.style.display='block'; statusEl.style.background='#fff3cd'; statusEl.style.borderColor='#ffeeba'; }
+    if(statusTxt) statusTxt.textContent = 'Lendo arquivo... Aguarde.';
+
     try {
-        const rh = await window.getFromDB('dRH'); // getFromDB ja tem cache interno
-        if(rh && rh.length > 0) {
-            const ativos = rh.filter(r => (r['Status']||r['STATUS']||'ATIVO').toUpperCase() !== 'INATIVO');
-            ativos.sort((a,b) => (a['Nome']||a['NOME']||'').localeCompare(b['Nome']||b['NOME']||''));
-            sel.innerHTML = '<option value="">-- Selecione o seu nome --</option>';
-            ativos.forEach(r => {
-                const mat  = r['Matrícula']||r['Matricula']||r['MATRICULA']||'';
-                const nome = r['Nome']||r['NOME']||'';
-                if(nome) sel.innerHTML += `<option value="${mat}">${nome}</option>`;
-            });
-            return;
-        }
-    } catch(e) {}
-    sel.innerHTML = '<option value="">Sem lista. Verifique conexao.</option>';
+        var data = await giroLerArquivo(file);
+        if(!data || !data.length) { alert('Arquivo vazio ou formato não reconhecido.'); return; }
+
+        _giroData = giropProcessar(data);
+        _giroInitialized = true;
+
+        // Salva no Firebase
+        try { await window.saveToDB('giro_alocacao_data', _giroData); } catch(e) {}
+
+        if(statusEl) { statusEl.style.background='#eaf4fd'; statusEl.style.borderColor='#aed6f1'; }
+        if(statusTxt) statusTxt.textContent = file.name + ' — ' + _giroData.length + ' linhas importadas com sucesso em ' + new Date().toLocaleTimeString('pt-BR');
+
+        giroRenderAll();
+        document.getElementById('giro-btn-atualizar').style.display='';
+        document.getElementById('giro-btn-excel').style.display='';
+
+    } catch(e) {
+        alert('Erro ao ler arquivo: ' + e.message);
+        console.error(e);
+    }
+    input.value = '';
+};
+
+// ── Lê arquivo (xlsx ou csv) ───────────────────────────────────
+function giroLerArquivo(file) {
+    return new Promise(function(resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                var wb = XLSX.read(e.target.result, {type:'binary', cellDates:true});
+                var ws = wb.Sheets[wb.SheetNames[0]];
+                var json = XLSX.utils.sheet_to_json(ws, {defval:''});
+                resolve(json);
+            } catch(err) { reject(err); }
+        };
+        reader.onerror = reject;
+        reader.readAsBinaryString(file);
+    });
 }
 
-window.epiTog = function(item, size) {
-    const grp = document.getElementById('epi_grp_'+item); if(!grp) return;
-    const same = _epiPubSel[item] === size;
-    grp.querySelectorAll('.epi-sz-btn').forEach(b => b.classList.remove('selected'));
-    _epiPubSel[item] = same ? '' : size;
-    if(!same) grp.querySelectorAll('.epi-sz-btn').forEach(b => { if(b.textContent.trim()===size) b.classList.add('selected'); });
-};
-
-window.submitEpiPublicForm = async function() {
-    const sel = document.getElementById('epi_sel');
-    const vm  = document.getElementById('epi-vmsg');
-    const err = t => { if(vm){vm.style.display='block';vm.textContent=t;} };
-    if(!sel||!sel.value) { err('Selecione o seu nome na lista!'); return; }
-    if(!Object.values(_epiPubSel).some(v => v!=='')) { err('Selecione pelo menos um tamanho!'); return; }
-    if(vm) vm.style.display='none';
-    const btn = document.getElementById('epi-sub-btn');
-    if(btn) { btn.disabled=true; btn.innerText='A ENVIAR...'; }
-    const nome = sel.options[sel.selectedIndex].text;
-    const payload = {
-        nomeCompleto:nome, nome:nome, matricula:sel.value,
-        blusa:_epiPubSel.blusa, calca:_epiPubSel.calca, bermuda:_epiPubSel.bermuda,
-        casaco:_epiPubSel.casaco, bota:_epiPubSel.bota, luva:_epiPubSel.luva,
-        cinta:_epiPubSel.cinta, timestamp:new Date().getTime(), status:'PENDENTE'
-    };
-    try { await dbCloud.collection('logistica_epi_inbox').add(payload); } catch(e) {}
-    document.getElementById('epi-pub-form').style.display='none';
-    document.getElementById('epi-ok-view').style.display='block';
-};
-
-// ── Link WhatsApp ─────────────────────────────────────────────
-window.copyEpiFormLink = function() {
-    const nl   = String.fromCharCode(10);
-    const link = window.location.href.split('?')[0] + '?mode=formepi';
-    const msg  = 'Solicitacao de Uniforme & EPI'+nl+nl+'Acesse o link, selecione seu nome e tamanhos:'+nl+nl+link+nl+nl+'Obrigado!';
-    if(navigator.clipboard&&navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(msg).then(()=>alert('Link copiado! Cole no WhatsApp.')).catch(()=>{window.open('https://api.whatsapp.com/send?text='+encodeURIComponent(msg),'_blank');});
-    } else { window.open('https://api.whatsapp.com/send?text='+encodeURIComponent(msg),'_blank'); }
-};
-
-// ── ABA SUPERVISOR: carrega inbox + tabela em PARALELO ─────────
-window.renderEpiTab = async function(forceRefresh) {
-    if(_epiTabBusy) return;
-    _epiTabBusy = true;
-    try {
-        // Parallel: inbox e registros ao mesmo tempo
-        await Promise.all([
-            loadEpiInbox(forceRefresh),
-            renderEpiTable(forceRefresh)
-        ]);
-    } finally {
-        setTimeout(() => { _epiTabBusy = false; }, 1500);
-    }
-};
-
-// ── Caixa de entrada ──────────────────────────────────────────
-window.loadEpiInbox = async function(forceRefresh) {
-    const body = document.getElementById('epiInboxBody'); if(!body) return;
-    body.innerHTML = '<div style="padding:12px;text-align:center;color:#999;font-size:12px;"><i class="fas fa-circle-notch fa-spin"></i> Carregando...</div>';
-    _epiInboxMap = {}; let items = [];
-    try {
-        const snap = await dbCloud.collection('logistica_epi_inbox').where('status','==','PENDENTE').get();
-        snap.forEach(d => items.push({id:d.id, data:d.data()}));
-        // Ordena por timestamp decrescente (sem precisar de indice composto)
-        items.sort((a,b) => (b.data.timestamp||0) - (a.data.timestamp||0));
-    } catch(e) {}
-    if(!items.length) { body.innerHTML='<div style="padding:16px;text-align:center;color:#999;font-size:12px;">Nenhuma solicitacao pendente.</div>'; return; }
-    let h = '';
-    items.forEach((item, i) => {
-        _epiInboxMap[i] = item; const d = item.data;
-        const tags = EPI_ITEMS.filter(it=>d[it.k]).map(it=>`<span class="epi-sz-tag"><i class="${it.ico}"></i> ${it.lbl}: ${d[it.k]}</span>`).join('');
-        h += `<div class="epi-inbox-item">
-            <div class="epi-inbox-name">${d.nomeCompleto||d.nome||'?'} <span style="font-size:10px;color:#999;font-weight:400;">(${d.matricula})</span></div>
-            <div class="epi-inbox-sizes">${tags}</div>
-            <div style="display:flex;gap:8px;margin-top:8px;">
-                <button class="btn btn-green" style="padding:5px 12px;font-size:12px;" onclick="abrirModalAprovar(${i})"><i class="fas fa-check-square"></i> Aprovar Itens</button>
-                <button class="btn btn-red" style="padding:5px 12px;font-size:12px;" onclick="rejeitarEpi(${i})"><i class="fas fa-times"></i> Rejeitar</button>
-            </div>
-        </div>`;
-    });
-    body.innerHTML = h;
-};
-
-// ── Modal aprovacao por item ───────────────────────────────────
-window.abrirModalAprovar = function(i) {
-    const item = _epiInboxMap[i]; if(!item) return;
-    _epiAprovandoIdx = i;
-    const d = item.data;
-    const nomeEl = document.getElementById('modalAprovarEpiNome');
-    if(nomeEl) nomeEl.innerHTML = `<i class="fas fa-user"></i> ${d.nomeCompleto||d.nome||'?'} <span style="color:#888;font-weight:400;font-size:12px;">(${d.matricula})</span>`;
-    const itensEl = document.getElementById('modalAprovarEpiItens');
-    if(itensEl) {
-        const itensReq = EPI_ITEMS.filter(it => d[it.k]);
-        itensEl.innerHTML = itensReq.map(it => `
-            <label class="epi-item-chk">
-                <input type="checkbox" id="chk_${it.k}" checked onchange="this.closest('label').style.opacity=this.checked?'1':'0.5'">
-                <i class="${it.ico}" style="color:#8e44ad;font-size:15px;"></i>
-                <span style="font-weight:800;min-width:60px;">${it.lbl}:</span>
-                <span style="background:#8e44ad;color:white;border-radius:5px;padding:2px 9px;font-size:12px;">${d[it.k]}</span>
-                <span style="margin-left:auto;font-size:11px;color:#27ae60;font-weight:700;">Sera fornecido</span>
-            </label>`).join('');
-    }
-    const btn = document.getElementById('btnConfirmarAprEpi');
-    if(btn) { btn.disabled=false; btn.innerHTML='<i class="fas fa-check"></i> Confirmar Aprovacao'; }
-    document.getElementById('modalAprovarEpi').style.display='flex';
-};
-
-// ── APROVAR — UI instantânea + escrita async ───────────────────
-window.confirmarAprovacaoEpi = async function() {
-    const item = _epiInboxMap[_epiAprovandoIdx]; if(!item) return;
-    const btn = document.getElementById('btnConfirmarAprEpi');
-    if(btn) { btn.disabled=true; btn.innerHTML='<i class="fas fa-circle-notch fa-spin"></i> Salvando...'; }
-    const d = item.data;
-    const fornecidos = {};
-    EPI_ITEMS.forEach(it => {
-        const chk = document.getElementById('chk_'+it.k);
-        fornecidos[it.k] = (chk && chk.checked && d[it.k]) ? d[it.k] : '-';
-    });
-    const temAlgum = Object.values(fornecidos).some(v => v !== '-');
-    if(!temAlgum) {
-        alert('Selecione pelo menos um item para fornecer!');
-        if(btn) { btn.disabled=false; btn.innerHTML='<i class="fas fa-check"></i> Confirmar Aprovacao'; }
-        return;
-    }
-    // Novo registro para o cache
-    const novoReg = {
-        id: 'temp_'+Date.now(), // ID temporário até o Firestore confirmar
-        mat: d.matricula,
-        nome: d.nomeCompleto||d.nome||'',
-        blusa:fornecidos.blusa, calca:fornecidos.calca, bermuda:fornecidos.bermuda,
-        casaco:fornecidos.casaco, bota:fornecidos.bota, luva:fornecidos.luva,
-        cinta:fornecidos.cinta,
-        dataAprov: new Date().toLocaleDateString('pt-BR'),
-        dataAprovTs: Date.now(),
-        status: 'aprovado', dataEntrega: ''
-    };
-    // 1. Atualiza cache instantaneamente
-    if(_epiCache.docs) { _epiCache.docs.unshift(novoReg); }
-    // 2. Fecha modal e atualiza UI imediatamente (sem esperar Firestore)
-    document.getElementById('modalAprovarEpi').style.display='none';
-    renderEpiTableFromCache();
-    // Remove item da inbox visualmente
-    const inboxItem = document.querySelector(`[data-inbox="${_epiAprovandoIdx}"]`);
-    if(inboxItem) inboxItem.remove();
-    // 3. Grava no Firestore em background (não bloqueia o UI)
-    try {
-        const [snapReg] = await Promise.all([
-            dbCloud.collection('logistica_epi_registros').add({
-                inboxId: item.id,
-                mat: novoReg.mat, nome: novoReg.nome,
-                blusa:novoReg.blusa, calca:novoReg.calca, bermuda:novoReg.bermuda,
-                casaco:novoReg.casaco, bota:novoReg.bota, luva:novoReg.luva,
-                cinta:novoReg.cinta,
-                dataAprov: novoReg.dataAprov,
-                dataAprovTs: novoReg.dataAprovTs,
-                status: 'aprovado', dataEntrega: ''
-            }),
-            dbCloud.collection('logistica_epi_inbox').doc(item.id).update({status:'APROVADO'})
-        ]);
-        // Atualiza ID temporário no cache com o ID real do Firestore
-        if(_epiCache.docs) {
-            const idx = _epiCache.docs.findIndex(r => r.id === novoReg.id);
-            if(idx >= 0) _epiCache.docs[idx].id = snapReg.id;
+// ── Processa linhas do arquivo ─────────────────────────────────
+// Mapeia colunas flexíveis (PT, EN, abreviadas, etc.)
+function giropProcessar(rows) {
+    return rows.map(function(r, idx) {
+        // Resolve valor de coluna com múltiplos nomes possíveis
+        function col() {
+            for(var i=0;i<arguments.length;i++){
+                var keys = Object.keys(r);
+                for(var j=0;j<keys.length;j++){
+                    if(keys[j].toLowerCase().replace(/\s/g,'').includes(arguments[i].toLowerCase().replace(/\s/g,'')))
+                        return String(r[keys[j]]||'').trim();
+                }
+            }
+            return '';
         }
-    } catch(e) {
-        console.warn('EPI save error:', e);
-        // Remove do cache se falhou
-        if(_epiCache.docs) {
-            _epiCache.docs = _epiCache.docs.filter(r => r.id !== novoReg.id);
+
+        var dataRaw   = col('DataAlocação','DataAloca','Date','Data','DataAloc');
+        var produto   = col('Produto','Product','Cod','Código','Code','Item');
+        var resp      = col('Resp.Alocação','RespAloc','Responsavel','Resp','User','Usuario','Operador');
+        var endereco  = col('Endereço','Endereco','Address','End.','End','Local','Localizacao');
+        var barras    = col('Barras','Barra','Barcode','Bar','Código Barras');
+        var volumes   = col('Volumes','Volume','Qtd','Quantidade','Total');
+        var volAloc   = col('VolumesAlocados','Vol.Aloc','Alocados','Allocated');
+        var volPend   = col('VolumesPendentes','Vol.Pend','Pendentes','Pending');
+        var tempoAprov = col('TempoAprov','Tempo','Time','TAprov','TempoA');
+
+        // Data formatada
+        var dataFmt = '';
+        if(dataRaw) {
+            var d = new Date(dataRaw);
+            if(!isNaN(d)) dataFmt = d.toLocaleDateString('pt-BR');
+            else dataFmt = dataRaw;
         }
-        renderEpiTableFromCache();
-        alert('Erro ao salvar: ' + e.message);
+
+        // Classifica endereço → estação
+        var estacao = giroClassificarEstacao(endereco);
+
+        // Status de giro
+        var status = giroAvaliarStatus(produto, endereco, estacao, parseInt(volPend)||0);
+
+        return {
+            idx: idx,
+            dataAlocacao: dataFmt,
+            dataRaw: dataRaw,
+            produto: produto,
+            respAlocacao: resp,
+            endereco: endereco,
+            barras: barras,
+            volumes: parseInt(volumes)||0,
+            volAlocados: parseInt(volAloc)||0,
+            volPendentes: parseInt(volPend)||0,
+            tempoAprov: tempoAprov,
+            estacaoId: estacao ? estacao.id : 0,
+            estacaoNome: estacao ? estacao.nome : 'Não mapeada',
+            estacaoCor: estacao ? estacao.cor : 'giro-sX',
+            status: status // 'ok' | 'warn' | 'err'
+        };
+    }).filter(function(r){ return r.produto || r.endereco; });
+}
+
+// ── Classifica endereço em estação ────────────────────────────
+function giroClassificarEstacao(endereco) {
+    if(!endereco) return null;
+    for(var i=0;i<GIRO_ESTACOES.length;i++){
+        if(GIRO_ESTACOES[i].validar(endereco)) return GIRO_ESTACOES[i];
+    }
+    return null;
+}
+
+// ── Avalia status do giro ─────────────────────────────────────
+// Regras:
+//   OK   = produto tem estação definida e volumes pendentes = 0
+//   WARN = produto tem estação mas tem pendências OU estação != esperado
+//   ERR  = produto sem endereço ou sem estação mapeada
+function giroAvaliarStatus(produto, endereco, estacao, volPend) {
+    if(!endereco || !produto) return 'err';
+    if(!estacao) return 'warn'; // endereço fora do mapeamento
+    if(volPend > 0) return 'warn';
+    return 'ok';
+}
+
+// ── Renderiza tudo ─────────────────────────────────────────────
+function giroRenderAll() {
+    giroRenderKPIs();
+    giroRenderEstacoes();
+    giroFiltrar();
+    // Mostra paineis
+    document.getElementById('giro-placeholder').style.display = 'none';
+    document.getElementById('giro-kpis').style.display = '';
+    document.getElementById('giro-mapa-estacoes').style.display = '';
+    document.getElementById('giro-filtros').style.display = '';
+}
+
+// ── KPIs ───────────────────────────────────────────────────────
+function giroRenderKPIs() {
+    var d = _giroData;
+    var ok   = d.filter(function(r){return r.status==='ok';}).length;
+    var warn = d.filter(function(r){return r.status==='warn';}).length;
+    var err  = d.filter(function(r){return r.status==='err';}).length;
+    var pend = d.reduce(function(a,r){return a+r.volPendentes;},0);
+    var estIds = [...new Set(d.map(function(r){return r.estacaoId;}).filter(Boolean))];
+
+    document.getElementById('gk-total').textContent = d.length;
+    document.getElementById('gk-ok').textContent    = ok;
+    document.getElementById('gk-warn').textContent  = warn;
+    document.getElementById('gk-err').textContent   = err;
+    document.getElementById('gk-pend').textContent  = pend;
+    document.getElementById('gk-estacoes').textContent = estIds.length;
+}
+
+// ── Mapa de estações ───────────────────────────────────────────
+function giroRenderEstacoes() {
+    var grid = document.getElementById('giro-estacoes-grid');
+    if(!grid) return;
+    var estMap = {};
+    _giroData.forEach(function(r) {
+        var key = r.estacaoId || 0;
+        if(!estMap[key]) estMap[key] = {est:r, ok:0, warn:0, err:0, pend:0, total:0};
+        estMap[key].total++;
+        estMap[key][r.status]++;
+        estMap[key].pend += r.volPendentes;
+    });
+    var html = '';
+    Object.keys(estMap).forEach(function(key) {
+        var e = estMap[key];
+        var nome = e.est.estacaoNome;
+        var cor  = e.est.estacaoCor;
+        var pct  = e.total > 0 ? Math.round((e.ok/e.total)*100) : 0;
+        var barColor = pct>=80?'#27ae60':pct>=50?'#f39c12':'#e74c3c';
+        html += '<div style="background:white;border-radius:10px;padding:14px 18px;border-left:4px solid #2980b9;box-shadow:0 2px 8px rgba(0,0,0,.07);min-width:200px;flex:1;">'
+              + '<div style="font-size:11px;font-weight:800;color:#888;text-transform:uppercase;margin-bottom:4px;"><span class="giro-station-badge '+cor+'">'+nome+'</span></div>'
+              + '<div style="font-size:22px;font-weight:900;color:#2c3e50;">'+e.total+' <span style="font-size:11px;font-weight:600;color:#aaa;">produtos</span></div>'
+              + '<div style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap;">'
+              + '<span class="giro-badge giro-ok">✓ '+e.ok+'</span>'
+              + '<span class="giro-badge giro-warn">⚡ '+e.warn+'</span>'
+              + '<span class="giro-badge giro-err">✗ '+e.err+'</span>'
+              + '</div>'
+              + '<div style="background:#f0f0f0;border-radius:4px;height:6px;margin-top:8px;">'
+              + '<div style="background:'+barColor+';height:6px;border-radius:4px;width:'+pct+'%;transition:width .5s;"></div></div>'
+              + '<div style="font-size:10px;color:#aaa;margin-top:3px;">'+pct+'% correto | '+e.pend+' vol. pendentes</div>'
+              + '</div>';
+    });
+    if(!html) html = '<div style="color:#999;font-size:12px;padding:10px;">Nenhuma estação identificada nos dados importados.</div>';
+    grid.innerHTML = html;
+}
+
+// ── Filtros e tabela ───────────────────────────────────────────
+window.giroFiltrar = function() {
+    var busca   = (document.getElementById('giro-busca').value||'').toLowerCase();
+    var fStatus = document.getElementById('giro-filtro-status').value;
+    var fEst    = document.getElementById('giro-filtro-estacao').value;
+    var fPend   = document.getElementById('giro-filtro-pendente').value;
+
+    _giroFiltered = _giroData.filter(function(r) {
+        if(busca && !(r.produto.toLowerCase().includes(busca) || r.endereco.toLowerCase().includes(busca) || r.respAlocacao.toLowerCase().includes(busca))) return false;
+        if(fStatus !== 'all' && r.status !== fStatus) return false;
+        if(fEst !== 'all') {
+            if(fEst === 'outro' && r.estacaoId !== 0) return false;
+            if(fEst !== 'outro' && r.estacaoId !== parseInt(fEst)) return false;
+        }
+        if(fPend === 'pend' && r.volPendentes === 0) return false;
+        if(fPend === 'ok'   && r.volPendentes > 0)  return false;
+        return true;
+    });
+
+    // Ordena
+    _giroFiltered.sort(function(a,b){
+        var va = a[_giroSortCol]||'', vb = b[_giroSortCol]||'';
+        if(typeof va === 'number') return _giroSortAsc ? va-vb : vb-va;
+        return _giroSortAsc ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+    });
+
+    giroRenderTabela();
+    var lbl = document.getElementById('giro-count-label');
+    if(lbl) lbl.textContent = _giroFiltered.length + ' de ' + _giroData.length + ' registros';
+};
+
+window.giroSort = function(col) {
+    if(_giroSortCol === col) _giroSortAsc = !_giroSortAsc;
+    else { _giroSortCol = col; _giroSortAsc = true; }
+    giroFiltrar();
+};
+
+function giroRenderTabela() {
+    var tbody = document.getElementById('giro-tbody');
+    var empty = document.getElementById('giro-empty');
+    if(!tbody) return;
+    if(!_giroFiltered.length) {
+        tbody.innerHTML = '';
+        if(empty) empty.style.display = '';
         return;
     }
-    // Recarrega inbox para remover o item aprovado
-    loadEpiInbox(true);
-};
+    if(empty) empty.style.display = 'none';
 
-window.rejeitarEpi = async function(i) {
-    const item = _epiInboxMap[i]; if(!item||!confirm('Rejeitar esta solicitacao?')) return;
-    try { await dbCloud.collection('logistica_epi_inbox').doc(item.id).update({status:'REJEITADO'}); } catch(e){}
-    loadEpiInbox(true);
-};
+    var badgeMap = {
+        ok:   '<span class="giro-badge giro-ok"><i class="fas fa-check"></i> Giro Correto</span>',
+        warn: '<span class="giro-badge giro-warn"><i class="fas fa-exclamation-triangle"></i> Revisar Giro</span>',
+        err:  '<span class="giro-badge giro-err"><i class="fas fa-times"></i> Sem Definição</span>'
+    };
+    var rowClass = {ok:'row-ok', warn:'row-warn', err:'row-err'};
 
-// ── Confirmar entrega — OPTIMISTIC UI ─────────────────────────
-window.confirmarEntregaEpi = async function(docId) {
-    if(!confirm('Confirmar a entrega fisica dos itens?')) return;
-    const dataEntrega = new Date().toLocaleDateString('pt-BR');
-    // 1. Atualiza cache e tela instantaneamente
-    if(_epiCache.docs) {
-        const reg = _epiCache.docs.find(r => r.id === docId);
-        if(reg) { reg.status='entregue'; reg.dataEntrega=dataEntrega; }
-    }
-    renderEpiTableFromCache();
-    // 2. Escreve no Firestore em background
-    try {
-        await dbCloud.collection('logistica_epi_registros').doc(docId).update({status:'entregue', dataEntrega});
-    } catch(e) {
-        alert('Erro ao salvar entrega: '+e.message);
-        _epiCache.docs = null; // invalida cache em caso de erro
-        renderEpiTable(true);
-    }
-};
-
-// ── Tabela: CACHE primeiro, Firestore só quando necessário ─────
-window.renderEpiTable = async function(forceRefresh) {
-    const now = Date.now();
-    const cacheValido = _epiCache.docs && (now - _epiCache.ts) < _epiCache.TTL;
-    if(!forceRefresh && cacheValido) {
-        renderEpiTableFromCache();
-        return;
-    }
-    // Busca do Firestore
-    const tb = document.getElementById('tbEpi'); if(!tb) return;
-    if(!cacheValido) tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:12px;color:#999;"><i class="fas fa-circle-notch fa-spin"></i> Atualizando...</td></tr>';
-    try {
-        const snap = await dbCloud.collection('logistica_epi_registros').get();
-        const docs = [];
-        snap.forEach(d => docs.push({id:d.id, ...d.data()}));
-        docs.sort((a,b) => (b.dataAprovTs||0) - (a.dataAprovTs||0));
-        _epiCache.docs = docs;
-        _epiCache.ts   = Date.now();
-    } catch(e) {
-        if(!_epiCache.docs) { tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:20px;color:#e74c3c;">Erro ao carregar. Verifique conexao.</td></tr>'; return; }
-    }
-    renderEpiTableFromCache();
-};
-
-// Renderiza a tabela do cache (sem ir ao Firestore — instantâneo)
-window.renderEpiTableFromCache = function() {
-    const tb = document.getElementById('tbEpi'); if(!tb) return;
-    const docs = _epiCache.docs || [];
-    const filterSel = document.getElementById('epiFilterStatus');
-    const filter = filterSel ? filterSel.value : 'all';
-    const filtered = filter === 'all' ? docs : docs.filter(r => r.status === filter);
-    const cnt  = document.getElementById('epiRegCount');  if(cnt)  cnt.textContent  = docs.length;
-    const ecnt = document.getElementById('epiEntregCount'); if(ecnt) ecnt.textContent = docs.filter(r=>r.status==='entregue').length+' entregues';
-    if(!filtered.length) { tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:20px;color:#999;">Nenhum registro encontrado.</td></tr>'; return; }
-    const sz = v => (!v||v==='-') ? '<span style="color:#ccc;">-</span>' : `<span style="background:#e8daef;color:#6c3483;padding:2px 7px;border-radius:4px;font-weight:700;font-size:10px;">${v}</span>`;
-    tb.innerHTML = filtered.map(x => {
-        const isEntregue = x.status === 'entregue';
-        const statusBadge = isEntregue
-            ? `<span class="epi-badge-entg"><i class="fas fa-check-double"></i> Entregue ${x.dataEntrega||''}</span>`
-            : `<span class="epi-badge-pend"><i class="fas fa-box"></i> Aguard. Entrega</span>`;
-        const acoes = isEntregue
-            ? `<button onclick="excluirEpiReg('${x.id}')" style="background:#e74c3c;color:white;border:none;border-radius:4px;padding:3px 8px;font-size:10px;font-weight:700;cursor:pointer;"><i class="fas fa-trash"></i></button>`
-            : `<button onclick="confirmarEntregaEpi('${x.id}')" style="background:#27ae60;color:white;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;"><i class="fas fa-box-open"></i> Entregar</button> <button onclick="excluirEpiReg('${x.id}')" style="background:#e74c3c;color:white;border:none;border-radius:4px;padding:5px 8px;font-size:10px;font-weight:700;cursor:pointer;margin-left:4px;"><i class="fas fa-trash"></i></button>`;
-        return `<tr class="${isEntregue?'epi-reg-row-entg':''}"><td style="text-align:left;font-weight:700;white-space:nowrap;">${x.nome}</td><td style="text-align:left;color:#777;font-size:10px;">${x.mat}</td><td>${sz(x.blusa)}</td><td>${sz(x.calca)}</td><td>${sz(x.bermuda)}</td><td>${sz(x.casaco)}</td><td>${sz(x.bota)}</td><td>${sz(x.luva)}</td><td>${sz(x.cinta)}</td><td style="color:#777;font-size:10px;white-space:nowrap;">${x.dataAprov||''}</td><td>${statusBadge}</td><td style="white-space:nowrap;">${acoes}</td></tr>`;
+    tbody.innerHTML = _giroFiltered.map(function(r) {
+        var pendCell = r.volPendentes > 0
+            ? '<span style="color:#e74c3c;font-weight:800;">'+r.volPendentes+'</span>'
+            : '<span style="color:#27ae60;">0</span>';
+        var estBadge = '<span class="giro-station-badge '+r.estacaoCor+'">'+r.estacaoNome+'</span>';
+        return '<tr class="'+rowClass[r.status]+'">'
+            + '<td style="color:#777;font-size:10px;">'+r.dataAlocacao+'</td>'
+            + '<td style="font-weight:700;">'+r.produto+'</td>'
+            + '<td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;" title="'+r.respAlocacao+'">'+r.respAlocacao+'</td>'
+            + '<td style="font-family:monospace;font-size:11px;font-weight:700;color:#2980b9;">'+r.endereco+'</td>'
+            + '<td style="color:#777;font-size:10px;">'+r.barras+'</td>'
+            + '<td style="text-align:right;font-weight:700;">'+r.volumes+'</td>'
+            + '<td style="text-align:right;color:#27ae60;font-weight:700;">'+r.volAlocados+'</td>'
+            + '<td style="text-align:right;">'+pendCell+'</td>'
+            + '<td style="color:#777;font-size:10px;">'+r.tempoAprov+'</td>'
+            + '<td>'+estBadge+'</td>'
+            + '<td>'+badgeMap[r.status]+'</td>'
+            + '</tr>';
     }).join('');
+}
+
+// ── Atualizar (reaplica filtros) ───────────────────────────────
+window.giroAtualizar = function() {
+    if(_giroData.length) { giroRenderAll(); }
 };
 
-window.excluirEpiReg = async function(docId) {
-    if(!confirm('Excluir este registro permanentemente?')) return;
-    // Optimistic: remove do cache e tela imediatamente
-    if(_epiCache.docs) { _epiCache.docs = _epiCache.docs.filter(r => r.id !== docId); }
-    renderEpiTableFromCache();
-    try { await dbCloud.collection('logistica_epi_registros').doc(docId).delete(); } catch(e) {
-        alert('Erro ao excluir: '+e.message);
-        _epiCache.docs = null; renderEpiTable(true); // recarrega em caso de erro
-    }
+// ── Exportar Excel ─────────────────────────────────────────────
+window.giroExportarExcel = function() {
+    if(!_giroData.length) { alert('Nenhum dado para exportar.'); return; }
+    var rows = [['Data Alocacao','Produto','Resp. Alocacao','Endereco','Barras','Volumes','Vol. Alocados','Vol. Pendentes','Tempo Aprov.','Estacao','Status Giro']];
+    (_giroFiltered.length ? _giroFiltered : _giroData).forEach(function(r) {
+        var statusMap={ok:'Giro Correto',warn:'Revisar Giro',err:'Sem Definição'};
+        rows.push([r.dataAlocacao,r.produto,r.respAlocacao,r.endereco,r.barras,r.volumes,r.volAlocados,r.volPendentes,r.tempoAprov,r.estacaoNome,statusMap[r.status]||r.status]);
+    });
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Giro_Alocacao');
+    XLSX.writeFile(wb, 'Giro_Alocacao_'+new Date().toISOString().slice(0,10)+'.xlsx');
 };
 
-window.filterEpiTable = function() {
-    const q = (document.getElementById('epiSearchInput').value||'').toLowerCase();
-    document.querySelectorAll('#tbEpi tr').forEach(row => { row.style.display = q===''||row.textContent.toLowerCase().includes(q) ? '' : 'none'; });
-};
-
-window.exportEpiExcel = async function() {
+// ── Carrega dados salvos do Firebase ──────────────────────────
+window.giroCarregarSalvos = async function() {
     try {
-        // Usa cache se disponível, senão busca
-        let docs = _epiCache.docs;
-        if(!docs) {
-            const snap = await dbCloud.collection('logistica_epi_registros').get();
-            docs = []; snap.forEach(d => docs.push(d.data()));
-            docs.sort((a,b)=>(b.dataAprovTs||0)-(a.dataAprovTs||0));
+        var saved = await window.getFromDB('giro_alocacao_data');
+        if(saved && saved.length) {
+            _giroData = saved;
+            _giroInitialized = true;
+            giroRenderAll();
+            document.getElementById('giro-btn-atualizar').style.display='';
+            document.getElementById('giro-btn-excel').style.display='';
+            var st = document.getElementById('giro-status-importacao');
+            var tx = document.getElementById('giro-status-txt');
+            if(st) st.style.display='block';
+            if(tx) tx.textContent = 'Dados restaurados da nuvem — '+saved.length+' registros.';
         }
-        if(!docs.length) { alert('Nenhum registro para exportar.'); return; }
-        const rows = [['Colaborador','Matricula','Blusa','Calca','Bermuda','Casaco','Bota','Luva','Cinta','Data Aprovacao','Status','Data Entrega']];
-        docs.forEach(x => rows.push([x.nome,x.mat,x.blusa,x.calca,x.bermuda,x.casaco,x.bota,x.luva,x.cinta,x.dataAprov||'',x.status==='entregue'?'Entregue':'Aguardando Entrega',x.dataEntrega||'']));
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Uniforme_EPI');
-        XLSX.writeFile(wb, 'Uniforme_EPI_'+new Date().toISOString().slice(0,10)+'.xlsx');
-    } catch(e) { alert('Erro: '+e.message); }
+    } catch(e) {}
 };
+
+
+// ============================================================
+// EPI + DASHBOARD RH (completo)
+// ============================================================
+var _epiPubSel={blusa:'',calca:'',bermuda:'',casaco:'',bota:'',luva:'',cinta:''};
+var _epiInboxMap={},_epiAprovandoIdx=-1,_epiTabBusy=false;
+var _epiCache={docs:null,ts:0,TTL:90000};
+var EPI_ITEMS=[{k:'blusa',lbl:'Blusa',ico:'fas fa-tshirt'},{k:'calca',lbl:'Calca',ico:'fas fa-male'},{k:'bermuda',lbl:'Bermuda',ico:'fas fa-cut'},{k:'casaco',lbl:'Casaco',ico:'fas fa-mitten'},{k:'bota',lbl:'Bota',ico:'fas fa-shoe-prints'},{k:'luva',lbl:'Luva',ico:'fas fa-hand-paper'},{k:'cinta',lbl:'Cinta',ico:'fas fa-life-ring'}];
+async function loadEpiColabs(){const sel=document.getElementById('epi_sel');if(!sel)return;try{const rh=await window.getFromDB('dRH');if(rh&&rh.length>0){const at=rh.filter(r=>(r['Status']||r['STATUS']||'ATIVO').toUpperCase()!=='INATIVO');at.sort((a,b)=>(a['Nome']||a['NOME']||'').localeCompare(b['Nome']||b['NOME']||''));sel.innerHTML='<option value="">-- Selecione o seu nome --</option>';at.forEach(r=>{const mat=r['Matrícula']||r['Matricula']||r['MATRICULA']||'';const nome=r['Nome']||r['NOME']||'';if(nome)sel.innerHTML+=`<option value="${mat}">${nome}</option>`;});return;}}catch(e){}sel.innerHTML='<option value="">Sem lista.</option>';}
+window.epiTog=function(item,size){const grp=document.getElementById('epi_grp_'+item);if(!grp)return;const same=_epiPubSel[item]===size;grp.querySelectorAll('.epi-sz-btn').forEach(b=>b.classList.remove('selected'));_epiPubSel[item]=same?'':size;if(!same)grp.querySelectorAll('.epi-sz-btn').forEach(b=>{if(b.textContent.trim()===size)b.classList.add('selected');});};
+window.submitEpiPublicForm=async function(){const sel=document.getElementById('epi_sel');const vm=document.getElementById('epi-vmsg');const err=t=>{if(vm){vm.style.display='block';vm.textContent=t;}};if(!sel||!sel.value){err('Selecione o seu nome!');return;}if(!Object.values(_epiPubSel).some(v=>v!=='')){err('Selecione pelo menos um tamanho!');return;}if(vm)vm.style.display='none';const btn=document.getElementById('epi-sub-btn');if(btn){btn.disabled=true;btn.innerText='A ENVIAR...';}const nome=sel.options[sel.selectedIndex].text;const p={nomeCompleto:nome,nome,matricula:sel.value,blusa:_epiPubSel.blusa,calca:_epiPubSel.calca,bermuda:_epiPubSel.bermuda,casaco:_epiPubSel.casaco,bota:_epiPubSel.bota,luva:_epiPubSel.luva,cinta:_epiPubSel.cinta,timestamp:new Date().getTime(),status:'PENDENTE'};try{await dbCloud.collection('logistica_epi_inbox').add(p);}catch(e){}document.getElementById('epi-pub-form').style.display='none';document.getElementById('epi-ok-view').style.display='block';};
+window.copyEpiFormLink=function(){const nl=String.fromCharCode(10);const link=window.location.href.split('?')[0]+'?mode=formepi';const msg='Solicitacao de Uniforme & EPI'+nl+nl+'Acesse o link, selecione seu nome e tamanhos:'+nl+nl+link+nl+nl+'Obrigado!';if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(msg).then(()=>alert('Link copiado!')).catch(()=>window.open('https://api.whatsapp.com/send?text='+encodeURIComponent(msg),'_blank'));else window.open('https://api.whatsapp.com/send?text='+encodeURIComponent(msg),'_blank');};
+window.renderEpiTab=async function(forceRefresh){if(_epiTabBusy)return;_epiTabBusy=true;try{await Promise.all([loadEpiInbox(forceRefresh),renderEpiTable(forceRefresh)]);}finally{setTimeout(()=>{_epiTabBusy=false;},1500);}};
+window.loadEpiInbox=async function(forceRefresh){const body=document.getElementById('epiInboxBody');if(!body)return;body.innerHTML='<div style="padding:12px;text-align:center;color:#999;font-size:12px;"><i class="fas fa-circle-notch fa-spin"></i> Carregando...</div>';_epiInboxMap={};let items=[];try{const snap=await dbCloud.collection('logistica_epi_inbox').where('status','==','PENDENTE').get();snap.forEach(d=>items.push({id:d.id,data:d.data()}));items.sort((a,b)=>(b.data.timestamp||0)-(a.data.timestamp||0));}catch(e){}if(!items.length){body.innerHTML='<div style="padding:16px;text-align:center;color:#999;font-size:12px;">Nenhuma solicitacao pendente.</div>';return;}let h='';items.forEach((item,i)=>{_epiInboxMap[i]=item;const d=item.data;const tags=EPI_ITEMS.filter(it=>d[it.k]).map(it=>`<span class="epi-sz-tag"><i class="${it.ico}"></i> ${it.lbl}: ${d[it.k]}</span>`).join('');h+=`<div class="epi-inbox-item"><div class="epi-inbox-name">${d.nomeCompleto||d.nome||'?'} <span style="font-size:10px;color:#999;font-weight:400;">(${d.matricula})</span></div><div class="epi-inbox-sizes">${tags}</div><div style="display:flex;gap:8px;margin-top:8px;"><button class="btn btn-green" style="padding:5px 12px;font-size:12px;" onclick="abrirModalAprovar(${i})"><i class="fas fa-check-square"></i> Aprovar Itens</button><button class="btn btn-red" style="padding:5px 12px;font-size:12px;" onclick="rejeitarEpi(${i})"><i class="fas fa-times"></i> Rejeitar</button></div></div>`;});body.innerHTML=h;};
+window.abrirModalAprovar=function(i){const item=_epiInboxMap[i];if(!item)return;_epiAprovandoIdx=i;const d=item.data;const nEl=document.getElementById('modalAprovarEpiNome');if(nEl)nEl.innerHTML=`<i class="fas fa-user"></i> ${d.nomeCompleto||d.nome||'?'} <span style="color:#888;font-weight:400;font-size:12px;">(${d.matricula})</span>`;const iEl=document.getElementById('modalAprovarEpiItens');if(iEl){const req=EPI_ITEMS.filter(it=>d[it.k]);iEl.innerHTML=req.map(it=>`<label class="epi-item-chk"><input type="checkbox" id="chk_${it.k}" checked onchange="this.closest('label').style.opacity=this.checked?'1':'0.5'"><i class="${it.ico}" style="color:#8e44ad;font-size:15px;"></i><span style="font-weight:800;min-width:60px;">${it.lbl}:</span><span style="background:#8e44ad;color:white;border-radius:5px;padding:2px 9px;font-size:12px;">${d[it.k]}</span><span style="margin-left:auto;font-size:11px;color:#27ae60;font-weight:700;">Sera fornecido</span></label>`).join('');}const btn=document.getElementById('btnConfirmarAprEpi');if(btn){btn.disabled=false;btn.innerHTML='<i class="fas fa-check"></i> Confirmar Aprovacao';}document.getElementById('modalAprovarEpi').style.display='flex';};
+window.confirmarAprovacaoEpi=async function(){const item=_epiInboxMap[_epiAprovandoIdx];if(!item)return;const btn=document.getElementById('btnConfirmarAprEpi');if(btn){btn.disabled=true;btn.innerHTML='<i class="fas fa-circle-notch fa-spin"></i> Salvando...';}const d=item.data;const forn={};EPI_ITEMS.forEach(it=>{const chk=document.getElementById('chk_'+it.k);forn[it.k]=(chk&&chk.checked&&d[it.k])?d[it.k]:'-';});if(!Object.values(forn).some(v=>v!=='-')){alert('Selecione pelo menos um item!');if(btn){btn.disabled=false;btn.innerHTML='<i class="fas fa-check"></i> Confirmar Aprovacao';}return;}const nr={id:'tmp_'+Date.now(),mat:d.matricula,nome:d.nomeCompleto||d.nome||'',blusa:forn.blusa,calca:forn.calca,bermuda:forn.bermuda,casaco:forn.casaco,bota:forn.bota,luva:forn.luva,cinta:forn.cinta,dataAprov:new Date().toLocaleDateString('pt-BR'),dataAprovTs:Date.now(),status:'aprovado',dataEntrega:''};if(_epiCache.docs)_epiCache.docs.unshift(nr);document.getElementById('modalAprovarEpi').style.display='none';renderEpiTableFromCache();try{const[snapReg]=await Promise.all([dbCloud.collection('logistica_epi_registros').add({inboxId:item.id,mat:nr.mat,nome:nr.nome,blusa:nr.blusa,calca:nr.calca,bermuda:nr.bermuda,casaco:nr.casaco,bota:nr.bota,luva:nr.luva,cinta:nr.cinta,dataAprov:nr.dataAprov,dataAprovTs:nr.dataAprovTs,status:'aprovado',dataEntrega:''}),dbCloud.collection('logistica_epi_inbox').doc(item.id).update({status:'APROVADO'})]);if(_epiCache.docs){const idx=_epiCache.docs.findIndex(r=>r.id===nr.id);if(idx>=0)_epiCache.docs[idx].id=snapReg.id;}}catch(e){console.warn('EPI:',e);if(_epiCache.docs)_epiCache.docs=_epiCache.docs.filter(r=>r.id!==nr.id);renderEpiTableFromCache();alert('Erro: '+e.message);return;}loadEpiInbox(true);};
+window.rejeitarEpi=async function(i){const item=_epiInboxMap[i];if(!item||!confirm('Rejeitar?'))return;try{await dbCloud.collection('logistica_epi_inbox').doc(item.id).update({status:'REJEITADO'});}catch(e){}loadEpiInbox(true);};
+window.abrirModalEntregaEpi=function(docId){const doc=_epiCache.docs.find(r=>r.id===docId);if(!doc)return;document.getElementById('epiEntregaDocId').value=docId;const nEl=document.getElementById('modalEntregaNome');if(nEl)nEl.innerHTML=`${doc.nome} <span style="color:#888;font-weight:400;font-size:12px;">(${doc.mat})</span>`;const iEl=document.getElementById('modalEntregaItens');if(iEl){const itens=EPI_ITEMS.filter(it=>doc[it.k]&&doc[it.k]!=='-');iEl.innerHTML=itens.map(it=>`<label class="epi-item-chk"><input type="checkbox" id="entg_${it.k}" checked><i class="${it.ico}" style="color:#27ae60;font-size:15px;"></i><span style="font-weight:800;min-width:60px;">${it.lbl}:</span><span style="background:#d5f4e6;color:#27ae60;padding:2px 7px;border-radius:4px;font-weight:700;font-size:10px;">${doc[it.k]}</span></label>`).join('');}const radios=document.querySelectorAll('input[name="epiEntregaTipo"]');radios.forEach(r=>r.checked=r.value==='total');document.getElementById('modalEntregaEpi').style.display='flex';};window.confirmarEntregaEpi=async function(){const docId=document.getElementById('epiEntregaDocId').value;const tipoEntrega=document.querySelector('input[name="epiEntregaTipo"]:checked').value;const doc=_epiCache.docs.find(r=>r.id===docId);if(!doc)return;const de=new Date().toLocaleDateString('pt-BR');let novoStatus='entregue';if(tipoEntrega==='individual'){const itensEntregues=EPI_ITEMS.filter(it=>{const chk=document.getElementById('entg_'+it.k);return chk&&chk.checked;}).map(it=>it.k);if(itensEntregues.length===0){alert('Selecione pelo menos um item para entregar!');return;}doc.itensEntregues=itensEntregues;doc.dataEntregaParcial=de;novoStatus='entrega_parcial';}else{doc.status='entregue';doc.dataEntrega=de;}if(_epiCache.docs){const idx=_epiCache.docs.findIndex(r=>r.id===docId);if(idx>=0)_epiCache.docs[idx]=doc;}renderEpiTableFromCache();document.getElementById('modalEntregaEpi').style.display='none';try{const updateData={status:novoStatus,dataEntrega:de};if(tipoEntrega==='individual'){updateData.itensEntregues=doc.itensEntregues;updateData.dataEntregaParcial=de;}await dbCloud.collection('logistica_epi_registros').doc(docId).update(updateData);}catch(e){alert('Erro:'+e.message);_epiCache.docs=null;renderEpiTable(true);}};window.fecharModalEntregaEpi=function(){document.getElementById('modalEntregaEpi').style.display='none';};;
+window.renderEpiTable=async function(forceRefresh){if(!forceRefresh&&_epiCache.docs&&(Date.now()-_epiCache.ts)<_epiCache.TTL){renderEpiTableFromCache();return;}const tb=document.getElementById('tbEpi');if(!tb)return;tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:12px;color:#999;"><i class="fas fa-circle-notch fa-spin"></i> Carregando...</td></tr>';try{const snap=await dbCloud.collection('logistica_epi_registros').get();const docs=[];snap.forEach(d=>docs.push({id:d.id,...d.data()}));docs.sort((a,b)=>(b.dataAprovTs||0)-(a.dataAprovTs||0));_epiCache.docs=docs;_epiCache.ts=Date.now();}catch(e){if(!_epiCache.docs){tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:20px;color:#e74c3c;">Erro ao carregar.</td></tr>';return;}}renderEpiTableFromCache();};
+window.renderEpiTableFromCache=function(){const tb=document.getElementById('tbEpi');if(!tb)return;const docs=_epiCache.docs||[];const fSel=document.getElementById('epiFilterStatus');const f=fSel?fSel.value:'all';const filtered=f==='all'?docs:(f==='entregue'?docs.filter(r=>r.status==='entregue'):docs.filter(r=>r.status!=='entregue'));const cnt=document.getElementById('epiRegCount');if(cnt)cnt.textContent=docs.length;const ecnt=document.getElementById('epiEntregCount');if(ecnt){const ent=docs.filter(r=>r.status==='entregue').length;const parc=docs.filter(r=>r.status==='entrega_parcial').length;ecnt.textContent=ent+' entregues'+(parc>0?', '+parc+' parciais':'');}if(!filtered.length){tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:20px;color:#999;">Nenhum registro.</td></tr>';return;}const sz=v=>(!v||v==='-')?'<span style="color:#ccc;">-</span>':`<span style="background:#e8daef;color:#6c3483;padding:2px 7px;border-radius:4px;font-weight:700;font-size:10px;">${v}</span>`;tb.innerHTML=filtered.map(x=>{const ok=x.status==='entregue';const badge=ok?`<span class="epi-badge-entg"><i class="fas fa-check-double"></i> Entregue ${x.dataEntrega||''}</span>`:(x.status==='entrega_parcial'?`<span class="epi-badge-pend" style="background:#fff3cd;color:#856404;"><i class="fas fa-box"></i> Entrega Parcial ${x.dataEntregaParcial||''}</span>`:`<span class="epi-badge-pend"><i class="fas fa-box"></i> Aguard. Entrega</span>`);const act=ok?`<button onclick="excluirEpiReg('${x.id}')" style="background:#e74c3c;color:white;border:none;border-radius:4px;padding:3px 8px;font-size:10px;font-weight:700;cursor:pointer;"><i class="fas fa-trash"></i></button>`:`<button onclick="abrirModalEntregaEpi('${x.id}')" style="background:#27ae60;color:white;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;"><i class="fas fa-box-open"></i> Entregar</button> <button onclick="excluirEpiReg('${x.id}')" style="background:#e74c3c;color:white;border:none;border-radius:4px;padding:5px 8px;font-size:10px;font-weight:700;cursor:pointer;margin-left:4px;"><i class="fas fa-trash"></i></button>`;return `<tr class="${ok?'epi-reg-row-entg':''}"><td style="text-align:left;font-weight:700;white-space:nowrap;">${x.nome}</td><td style="text-align:left;color:#777;font-size:10px;">${x.mat}</td><td>${sz(x.blusa)}</td><td>${sz(x.calca)}</td><td>${sz(x.bermuda)}</td><td>${sz(x.casaco)}</td><td>${sz(x.bota)}</td><td>${sz(x.luva)}</td><td>${sz(x.cinta)}</td><td style="color:#777;font-size:10px;white-space:nowrap;">${x.dataAprov||''}</td><td>${badge}</td><td style="white-space:nowrap;">${act}</td></tr>`;}).join('');};
+window.excluirEpiReg=async function(docId){if(!confirm('Excluir permanentemente?'))return;if(_epiCache.docs)_epiCache.docs=_epiCache.docs.filter(r=>r.id!==docId);renderEpiTableFromCache();try{await dbCloud.collection('logistica_epi_registros').doc(docId).delete();}catch(e){alert('Erro:'+e.message);_epiCache.docs=null;renderEpiTable(true);}};
+window.filterEpiTable=function(){const q=(document.getElementById('epiSearchInput').value||'').toLowerCase();document.querySelectorAll('#tbEpi tr').forEach(r=>{r.style.display=q===''||r.textContent.toLowerCase().includes(q)?'':'none';});};
+window.exportEpiExcel=async function(){try{let docs=_epiCache.docs;if(!docs){const snap=await dbCloud.collection('logistica_epi_registros').get();docs=[];snap.forEach(d=>docs.push(d.data()));docs.sort((a,b)=>(b.dataAprovTs||0)-(a.dataAprovTs||0));}if(!docs.length){alert('Sem registros.');return;}const rows=[['Colaborador','Matricula','Blusa','Calca','Bermuda','Casaco','Bota','Luva','Cinta','Data Aprovacao','Status','Data Entrega']];docs.forEach(x=>rows.push([x.nome,x.mat,x.blusa,x.calca,x.bermuda,x.casaco,x.bota,x.luva,x.cinta,x.dataAprov||'',x.status==='entregue'?'Entregue':'Aguardando',x.dataEntrega||'']));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Uniforme_EPI');XLSX.writeFile(wb,'Uniforme_EPI_'+new Date().toISOString().slice(0,10)+'.xlsx');}catch(e){alert('Erro:'+e.message);}};
+
+// Dashboard RH
+window.renderDashboardRH=async function(){const btn=document.querySelector('[onclick*="renderDashboardRH"]');if(btn){btn.disabled=true;btn.innerHTML='<i class="fas fa-circle-notch fa-spin"></i> Actualizando...';}try{const ano=new Date().getFullYear();setDRH('drh-ano-label',ano);const[dRHfb,rhDataFb,pendInbox,epiRegs]=await Promise.all([window.getFromDB('dRH').catch(()=>null),window.getFromDB('rhData').catch(()=>null),dbCloud.collection('logistica_ferias_inbox').where('status','==','PENDENTE').get().catch(()=>null),dbCloud.collection('logistica_epi_registros').get().catch(()=>null)]);const lista=(dRHfb&&dRHfb.length)?dRHfb:(window.dRH||[]);const rh=rhDataFb||window.rhData||{};const hoje=new Date();hoje.setHours(0,0,0,0);let ativos=0,inativos=0,entradasAno=0,supCount=0,liderCount=0,opCount=0;lista.forEach(c=>{const mat=c['Matrícula']||c['Matricula']||c['MATRICULA']||'';const func=(c['Função']||c['Funcao']||c['FUNÇÃO']||'').toUpperCase();const s=(c['Status']||c['STATUS']||'ATIVO').toUpperCase();const rhM=rh[mat]||{};const sf=(rhM.statusManual&&rhM.statusManual!=='AUTO')?rhM.statusManual.toUpperCase():s;if(sf==='INATIVO'){inativos++;return;}ativos++;if(func.includes('SUPERVISOR'))supCount++;else if(func.includes('LIDER')||func.includes('LÍDER'))liderCount++;else opCount++;const admRaw=c['Admissão']||c['Admissao']||c['ADMISSÃO']||'';let admY=0;if(admRaw.includes('/'))admY=parseInt(admRaw.split('/')[2]||0);else if(admRaw.includes('-'))admY=parseInt(admRaw.split('-')[0]||0);if(admY===ano)entradasAno++;});const turnover=inativos>0?((inativos/Math.max(1,ativos+inativos))*100).toFixed(1):'0.0';const pendRep=(typeof pendenciasRH!=='undefined')?pendenciasRH.length:0;setDRH('drh-entradas',entradasAno);setDRH('drh-saidas',inativos);setDRH('drh-turnover',turnover+'%');setDRH('drh-ativos',ativos);setDRH('drh-reposicoes',pendRep);let insC='📊 <strong>'+ativos+' ativos</strong> | '+supCount+' sup | '+liderCount+' líd | '+opCount+' op. ';insC+=parseFloat(turnover)>15?'🚨 Turnover elevado ('+turnover+'%).':parseFloat(turnover)>8?'⚡ Moderado ('+turnover+'%).':'✅ Controlado ('+turnover+'%).';if(pendRep>0)insC+=' 🔴 <strong>'+pendRep+' vaga(s) em reposição.</strong>';setDRH('ai-colab-insight',insC,true);let fAtivas=0,fVencidas=0,em30=0;lista.forEach(c=>{const mat=c['Matrícula']||c['Matricula']||c['MATRICULA']||'';const r=rh[mat]||{};if(r.feriasInicio&&r.feriasFim){const fi=new Date(r.feriasInicio+'T00:00:00'),ff=new Date(r.feriasFim+'T00:00:00');if(hoje>=fi&&hoje<=ff)fAtivas++;}if(r.limiteFerias){const lim=new Date(r.limiteFerias+'T00:00:00'),d=(lim-hoje)/86400000;if(d<0&&!r.feriasInicio)fVencidas++;else if(d>=0&&d<=30&&!r.feriasInicio)em30++;}});const pendFer=pendInbox?pendInbox.size:0;setDRH('drh-ferias-ativas',fAtivas);setDRH('drh-ferias-vencidas',fVencidas);setDRH('drh-ferias-a-vencer',em30);setDRH('drh-ferias-pendentes',pendFer);let insFer='';if(fVencidas>0)insFer+='🚨 <strong>'+fVencidas+' vencidas</strong> — risco legal. ';if(em30>0)insFer+='⏰ '+em30+' a vencer em 30 dias. ';if(fAtivas>0)insFer+='🌴 '+fAtivas+' em gozo. ';if(pendFer>0)insFer+='📬 '+pendFer+' pendente(s). ';if(!insFer)insFer='✅ Sem irregularidades.';setDRH('ai-ferias-insight',insFer,true);let totPos=0,totNeg=0,qtdPos=0,qtdNeg=0;Object.keys(rh).forEach(mat=>{const bh=typeof rh[mat].banco==='number'?rh[mat].banco:0;if(bh>0){totPos+=bh;qtdPos++;}else if(bh<0){totNeg+=Math.abs(bh);qtdNeg++;}});const fmtBH=h=>{const a=Math.abs(h);return(h<0?'-':'+')+String(Math.floor(a)).padStart(2,'0')+':'+String(Math.round((a-Math.floor(a))*60)).padStart(2,'0');};setDRH('drh-bh-positivo',fmtBH(totPos));setDRH('drh-bh-negativo',fmtBH(-totNeg));setDRH('drh-bh-qtd-pos',qtdPos);setDRH('drh-bh-qtd-neg',qtdNeg);setDRH('ai-bh-insight',(totPos>100?'⚠️ Saldo positivo elevado. ':qtdNeg>ativos*0.2?'🔴 +20% com saldo negativo. ':'')+'✅ OK',true);let totalAbs=0,diasAbs=0,motCount={},pesCount={},absMeses={};lista.forEach(c=>{const mat=c['Matrícula']||c['Matricula']||c['MATRICULA']||'';const nome=c['Nome']||c['NOME']||mat;((rh[mat]||{}).faltas||[]).forEach(f=>{totalAbs++;const dias=parseInt(f.dias)||1;diasAbs+=dias;motCount[f.motivo||'Outro']=(motCount[f.motivo||'Outro']||0)+dias;pesCount[nome]=(pesCount[nome]||0)+dias;const mk=(f.data||'').substring(0,7)||'N/A';absMeses[mk]=(absMeses[mk]||0)+dias;});});const topMot=Object.keys(motCount).sort((a,b)=>motCount[b]-motCount[a])[0]||'—';const topPes=Object.keys(pesCount).sort((a,b)=>pesCount[b]-pesCount[a])[0]||'—';setDRH('drh-abs-total',totalAbs);setDRH('drh-abs-dias',diasAbs);setDRH('drh-abs-motivo',topMot.length>22?topMot.slice(0,20)+'...':topMot);setDRH('drh-abs-pessoa',topPes.length>22?topPes.slice(0,20)+'...':topPes);renderChartAbsMotivo(motCount);renderChartAbsMensal2(absMeses);const taxa=ativos>0?((diasAbs/(ativos*22))*100).toFixed(1):0;setDRH('ai-abs-insight','📊 Taxa: <strong>'+taxa+'%</strong>. '+(parseFloat(taxa)>4?'🚨 Acima do limite. Motivo: <strong>'+topMot+'</strong>.':parseFloat(taxa)>2?'⚠️ Moderada.':'✅ Ok.'),true);let pTotal=0,pFaltas=0,pMarcacoes=0,pOk=0,pontoTipos={};Object.keys(rh).forEach(mat=>{((rh[mat]||{}).ponto||[]).forEach(p=>{pTotal++;const tp=(p.tipo||'').toLowerCase(),ac=(p.acao||'').toLowerCase();if(tp.includes('falta sem'))pFaltas++;if(tp.includes('marcação')||tp.includes('marcacao'))pMarcacoes++;if(ac.includes('justificado')||ac.includes('arquivado'))pOk++;pontoTipos[p.tipo||'Outro']=(pontoTipos[p.tipo||'Outro']||0)+1;});});setDRH('drh-ponto-total',pTotal);setDRH('drh-ponto-faltas',pFaltas);setDRH('drh-ponto-marcacoes',pMarcacoes);setDRH('drh-ponto-ok',pOk);renderChartPontoTipo(pontoTipos);setDRH('ai-ponto-insight',pTotal>0?'🗓 <strong>'+pTotal+' ocorrência(s)</strong>.'+(pFaltas>5?' ⚠️ Faltas: '+pFaltas+'.':''):'Nenhuma ocorrência.',true);let epiTotal=0,epiEntg=0;if(epiRegs)epiRegs.forEach(d=>{epiTotal++;if(d.data().status==='entregue')epiEntg++;});setDRH('drh-epi-total',epiTotal);setDRH('drh-epi-entregues',epiEntg);setDRH('drh-epi-pendentes',epiTotal-epiEntg);}catch(e){console.error('Dashboard RH:',e);}finally{if(btn){btn.disabled=false;btn.innerHTML='<i class="fas fa-sync-alt"></i> Atualizar Painel';}}};
+function renderChartAbsMensal(x){}
+function renderChartAbsMensal2(meses){const c=document.getElementById('chartAbsMensal');if(!c)return;if(window._dashCharts&&window._dashCharts.absMensal)window._dashCharts.absMensal.destroy();const sorted=Object.keys(meses).sort();if(!sorted.length)return;if(!window._dashCharts)window._dashCharts={};window._dashCharts.absMensal=new Chart(c.getContext('2d'),{type:'bar',data:{labels:sorted,datasets:[{label:'Dias',data:sorted.map(k=>meses[k]),backgroundColor:'#e74c3c99',borderColor:'#e74c3c',borderWidth:1}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{font:{size:10}}}}}});}
+function renderChartPontoTipo(tipos){const c=document.getElementById('chartPontoTipo');if(!c)return;if(window._dashCharts&&window._dashCharts.pontoTipo)window._dashCharts.pontoTipo.destroy();if(!tipos||!Object.keys(tipos).length)return;if(!window._dashCharts)window._dashCharts={};const labels=Object.keys(tipos);window._dashCharts.pontoTipo=new Chart(c.getContext('2d'),{type:'bar',data:{labels,datasets:[{label:'Ocorrencias',data:labels.map(k=>tipos[k]),backgroundColor:'#8e44ad99',borderColor:'#8e44ad',borderWidth:1}]},options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{font:{size:10}}}}}});}
 
 window.updatePublicFormFields = function() { const sel = document.getElementById('pf_colab_select'); if(!sel.value) return; document.getElementById('pf_mat').value = sel.value; document.getElementById('pf_nome').value = sel.options[sel.selectedIndex].text; };
 async function submitPublicForm() { const nome = document.getElementById('pf_nome').value; const mat = document.getElementById('pf_mat').value; const inicio = document.getElementById('pf_inicio').value; const fim = document.getElementById('pf_fim').value; const vendeuRadio = document.querySelector('input[name="pf_vender"]:checked'); const vendeu = vendeuRadio ? vendeuRadio.value : 'nao'; if(!mat||!nome) return alert("Selecione o seu nome!"); if(!inicio||!fim) return alert("Preencha Início e Retorno!"); const payload = { matricula:mat, nome:nome, dataInicio:inicio, dataRetorno:fim, vendeuDias:vendeu==='sim', timestamp:new Date().getTime(), status:'PENDENTE' }; try { const btn = document.querySelector('.pf-btn'); btn.innerText='A ENVIAR...'; btn.disabled=true; await dbCloud.collection('logistica_ferias_inbox').add(payload);
@@ -1740,6 +1896,7 @@ async function submitPublicForm() { const nome = document.getElementById('pf_nom
         document.getElementById('txtPontoObs').value = '';
         alert("Ocorrência de ponto registada com sucesso!");
         carregarTabelaPontoMes();
+        renderPontoAbsConsolidado();
     };
 
     window.removerPonto = async function(mat, idStr) {
@@ -1748,6 +1905,7 @@ async function submitPublicForm() { const nome = document.getElementById('pf_nom
             rhData[mat].ponto = rhData[mat].ponto.filter(p => p.id !== idStr);
             if (window.saveToDB) await window.saveToDB('rhData', rhData);
             carregarTabelaPontoMes();
+            renderPontoAbsConsolidado();
         }
     };
 
@@ -1835,33 +1993,29 @@ async function submitPublicForm() { const nome = document.getElementById('pf_nom
         const urlParams = new URLSearchParams(window.location.search);
         const mode = urlParams.get('mode');
         if (mode === 'formferias') {
-            document.body.style.background = '#f0f2f5';
-            document.getElementById('loginOverlay').style.display = 'none';
-            document.querySelector('.app-header').style.display = 'none';
-            document.querySelector('.memory-bar').style.display = 'none';
-            document.querySelector('.tab-bar').style.display = 'none';
-            document.querySelector('.container').style.display = 'none';
-            if (document.getElementById('btnExitTV')) document.getElementById('btnExitTV').style.display = 'none';
-            document.getElementById('publicFormWrapper').style.display = 'block';
-            document.getElementById('pf_group_select').style.display = 'block';
-            document.getElementById('pf_group_nome').style.display = 'none';
-            document.getElementById('pf_group_mat').style.display = 'none';
+            document.body.style.background='#f0f2f5';
+            document.getElementById('loginOverlay').style.display='none';
+            document.querySelector('.app-header').style.display='none';
+            document.querySelector('.memory-bar').style.display='none';
+            document.querySelector('.tab-bar').style.display='none';
+            document.querySelector('.container').style.display='none';
+            if(document.getElementById('btnExitTV'))document.getElementById('btnExitTV').style.display='none';
+            document.getElementById('publicFormWrapper').style.display='block';
+            document.getElementById('pf_group_select').style.display='block';
+            document.getElementById('pf_group_nome').style.display='none';
+            document.getElementById('pf_group_mat').style.display='none';
             loadEmployeesForPublicForm();
         }
         if (mode === 'formepi') {
-            document.body.style.background = '#f0f2f5';
-            document.body.style.overflow = 'auto';
-            document.getElementById('loginOverlay').style.display = 'none';
-            document.querySelector('.app-header').style.display = 'none';
-            document.querySelector('.memory-bar').style.display = 'none';
-            document.querySelector('.tab-bar').style.display = 'none';
-            document.querySelector('.container').style.display = 'none';
-            if(document.getElementById('btnExitTV')) document.getElementById('btnExitTV').style.display = 'none';
-            document.getElementById('publicFormWrapper').style.display = 'block';
-            ['epi-pub-form','pf-form-view','pf-success-view'].forEach(id => {
-                const el = document.getElementById(id);
-                if(el) el.style.display = (id === 'epi-pub-form') ? 'block' : 'none';
-            });
+            document.body.style.background='#f0f2f5'; document.body.style.overflow='auto';
+            document.getElementById('loginOverlay').style.display='none';
+            document.querySelector('.app-header').style.display='none';
+            document.querySelector('.memory-bar').style.display='none';
+            document.querySelector('.tab-bar').style.display='none';
+            document.querySelector('.container').style.display='none';
+            if(document.getElementById('btnExitTV'))document.getElementById('btnExitTV').style.display='none';
+            document.getElementById('publicFormWrapper').style.display='block';
+            ['epi-pub-form','pf-form-view','pf-success-view'].forEach(id=>{const e=document.getElementById(id);if(e)e.style.display=(id==='epi-pub-form')?'block':'none';});
             loadEpiColabs();
         }
     });
@@ -1900,12 +2054,358 @@ window.addEventListener('load', function() {
     }, 800);
 });
 
-const runCalcOriginal = window.runCalc;
+// ==========================================
+// FUNÇÃO GLOBAL DE INDICADORES (CORREÇÃO DA BASE DE DADOS: dRH)
+// ==========================================
+function atualizarTodosIndicadores() {
+    // O GRANDE SEGREDO: Usar a base dRH (Recursos Humanos) e não dC (Logística)
+    if (typeof dRH === 'undefined' || !dRH || dRH.length === 0) return;
+
+    // Filtra rigorosamente apenas os ATIVOS
+    let dRHAtivos = dRH.filter(c => c.status && c.status.trim().toLowerCase() === 'ativo');
+    
+    let totalGeral = dRH.length;
+    let totalAtivos = dRHAtivos.length;
+    let totalFerias = dRH.filter(c => c.status && c.status.trim().toLowerCase() === 'férias').length;
+    
+    // Conta os cargos apenas para os ativos
+    let contaSupervisores = dRHAtivos.filter(c => (c.cargo || c.funcao || "").toLowerCase().includes('supervisor')).length;
+    let contaLideres = dRHAtivos.filter(c => { let f = (c.cargo || c.funcao || "").toLowerCase(); return f.includes('lider') || f.includes('líder'); }).length;
+    let contaOperadores = dRHAtivos.filter(c => (c.cargo || c.funcao || "").toLowerCase().includes('operador')).length;
+
+    // Detetive 4.0: Procura os títulos e injeta os números
+    let todosElementos = document.querySelectorAll('div, span, h3, h4, th, td, p');
+    todosElementos.forEach(el => {
+        let texto = el.innerText.trim().toLowerCase();
+        let valorInjetar = null;
+
+        if (texto === 'total colaboradores' || texto === 'total de colaboradores') valorInjetar = totalGeral;
+        else if (texto === 'em férias' || texto === 'em ferias') valorInjetar = totalFerias;
+        else if (texto === 'supervisores' || texto === 'supervisor') valorInjetar = contaSupervisores;
+        else if (texto === 'líderes' || texto === 'lideres') valorInjetar = contaLideres;
+        else if (texto === 'operadores' || texto === 'operador') valorInjetar = contaOperadores;
+        else if (texto === 'total' && el.parentElement && !el.parentElement.innerText.toLowerCase().includes('colaboradores')) valorInjetar = totalAtivos;
+
+        if (valorInjetar !== null) {
+            let caixaValor = el.nextElementSibling;
+            if (!caixaValor || (caixaValor.innerText.trim() !== '0' && isNaN(parseInt(caixaValor.innerText)))) {
+                caixaValor = el.parentElement.querySelector('.kpi-val, [style*="font-size: 28px"], [style*="font-size:28px"], [id*="total"]');
+            }
+            if (caixaValor) caixaValor.innerText = valorInjetar;
+        }
+    });
+}
+
+// ==========================================
+// FORÇA A ATUALIZAÇÃO SEMPRE QUE O RH FOR MODIFICADO
+// ==========================================
+const runCalcOriginal_novo = window.runCalc;
 window.runCalc = function() {
     try {
-        // SALVA NA MEMÓRIA PERMANENTE
-        localStorage.setItem('sysLog_mem_dC', JSON.stringify(dC));
-        localStorage.setItem('sysLog_mem_dE', JSON.stringify(dE));
+        if (typeof runCalcOriginal_novo === 'function') runCalcOriginal_novo();
+        atualizarTodosIndicadores();
+    } catch(err) { console.error(err); }
+}
+
+const atualizarRHOriginal = window.atualizarRHManual;
+window.atualizarRHManual = function() {
+    try {
+        if (typeof atualizarRHOriginal === 'function') atualizarRHOriginal();
+        atualizarTodosIndicadores();
+    } catch(err) { console.error(err); }
+}
+
+// Atualiza na hora que a página carrega
+setTimeout(atualizarTodosIndicadores, 1500);
+// =====================================================
+// 🔥 PATCH DEFINITIVO - DASHBOARD RH FUNCIONANDO 100%
+// =====================================================
+
+// ❌ Remove função antiga se existir (evita conflito)
+try {
+    if (typeof atualizarIndicadoresRH !== 'undefined') {
+        atualizarIndicadoresRH = null;
+    }
+} catch(e) {}
+
+
+// =====================================================
+// ✅ FUNÇÃO PRINCIPAL DE KPI RH (CORRETA)
+// =====================================================
+function atualizarKPIsRH(lista) {
+    try {
+        if (!lista || !Array.isArray(lista)) return;
+
+        let ativos = 0;
+        let lideres = 0;
+        let operadores = 0;
+        let supervisores = 0;
+
+        lista.forEach(c => {
+            let status = (c.status || c.STATUS || 'ATIVO').toUpperCase();
+            let funcao = (c.funcao || c.FUNCAO || '').toUpperCase();
+
+            if (status === 'ATIVO' || status === 'AUTO') {
+                ativos++;
+
+                if (funcao.includes('SUPERVISOR')) {
+                    supervisores++;
+                } else if (funcao.includes('LIDER') || funcao.includes('LÍDER')) {
+                    lideres++;
+                } else if (funcao.includes('OPERADOR') || funcao.includes('SEPARADOR')) {
+                    operadores++;
+                }
+            }
+        });
+
+        // Atualização segura no DOM
+        const set = (id, val) => {
+            let el = document.getElementById(id);
+            if (el) el.textContent = val;
+        };
+
+        set('rh-tot', ativos);
+        set('rh-lid', lideres);
+        set('rh-op', operadores);
+        set('rh-sup', supervisores);
+
+        // Exibir grid
+        let kpis = document.getElementById('rh-kpis');
+        if (kpis && lista.length > 0) {
+            kpis.style.display = 'grid';
+        }
+
+    } catch (e) {
+        console.error('Erro KPIs RH:', e);
+    }
+}
+
+
+// =====================================================
+// ✅ ATUALIZAÇÃO AUTOMÁTICA AO CARREGAR SISTEMA
+// =====================================================
+window.addEventListener('load', function() {
+    setTimeout(() => {
+        try {
+            if (typeof dRH !== 'undefined' && dRH.length > 0) {
+                atualizarKPIsRH(dRH);
+            }
+        } catch(e) {
+            console.warn('Erro ao iniciar KPIs RH:', e);
+        }
+    }, 1000);
+});
+
+
+// =====================================================
+// ✅ ATUALIZAÇÃO AUTOMÁTICA CONTÍNUA
+// =====================================================
+setInterval(() => {
+    try {
+        if (typeof dRH !== 'undefined' && dRH.length > 0) {
+            atualizarKPIsRH(dRH);
+        }
     } catch(e) {}
-    if(runCalcOriginal) runCalcOriginal();
+}, 5000);
+
+
+// =====================================================
+// ✅ FORÇA ATUALIZAÇÃO AO ABRIR DASHBOARD RH
+// =====================================================
+(function() {
+    const originalPushState = history.pushState;
+    history.pushState = function() {
+        originalPushState.apply(this, arguments);
+
+        setTimeout(() => {
+            try {
+                let dash = document.getElementById('view-rh-dashboard');
+                if (dash && dash.style.display !== 'none') {
+
+                    if (typeof renderDashboardRH === 'function') {
+                        renderDashboardRH();
+                    }
+
+                    if (typeof dRH !== 'undefined') {
+                        atualizarKPIsRH(dRH);
+                    }
+                }
+            } catch(e) {}
+        }, 300);
+    };
+})();
+
+
+// =====================================================
+// ✅ ATUALIZA AO MODIFICAR LISTA DE RH
+// =====================================================
+window.atualizarRHManual = function() {
+    try {
+        if (typeof dRH !== 'undefined') {
+            atualizarKPIsRH(dRH);
+        }
+    } catch(e) {}
 };
+
+
+// =====================================================
+// 🔥 GARANTE EXECUÇÃO APÓS RESTORE SESSION
+// =====================================================
+const _oldRestoreSession = window.restoreSession;
+window.restoreSession = async function() {
+    if (_oldRestoreSession) {
+        await _oldRestoreSession.apply(this, arguments);
+    }
+
+    setTimeout(() => {
+        try {
+            if (typeof dRH !== 'undefined' && dRH.length > 0) {
+                atualizarKPIsRH(dRH);
+            }
+        } catch(e) {}
+    }, 500);
+};
+// ====================================================
+// PACOTE AUTOMÁTICO DE CORREÇÕES v2.0 (MÉTODO BLINDADO)
+// ====================================================
+
+// 1. Injeta o Quadro e Modal na tela
+setTimeout(() => {
+    let abaColab = document.getElementById('view-rh-colaboradores');
+    if (abaColab && !document.getElementById('quadro-info-display')) {
+        let quadroInfo = document.createElement('div');
+        quadroInfo.id = 'quadro-info-display';
+        quadroInfo.style.cssText = 'margin-bottom: 20px; font-size: 16px; background: #e8f8f5; padding: 15px; border-radius: 8px; border-left: 5px solid #117a65;';
+        abaColab.insertBefore(quadroInfo, abaColab.children[1] || abaColab.firstChild);
+    }
+
+    if (!document.getElementById('modalEntregaEpi')) {
+        let divModal = document.createElement('div');
+        divModal.innerHTML = `
+        <div id="modalEntregaEpi" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9999;align-items:center;justify-content:center;">
+            <div style="background:#fff;width:90%;max-width:400px;border-radius:12px;padding:20px;box-shadow:0 10px 30px rgba(0,0,0,0.2);">
+                <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #27ae60;padding-bottom:10px;margin-bottom:15px;">
+                    <h3 style="margin:0;color:#27ae60;"><i class="fas fa-box-open"></i> Entregar EPI</h3>
+                    <button onclick="fecharModalEntregaEpi()" style="background:none;border:none;font-size:24px;cursor:pointer;">&times;</button>
+                </div>
+                <div id="modalEntregaEpiNome" style="background:#e8f8f5;border-radius:8px;padding:10px;margin-bottom:12px;font-weight:bold;color:#117a65;"></div>
+                <div id="modalEntregaEpiItens" style="margin-bottom:16px;"></div>
+                <input type="hidden" id="modalEntregaEpiId">
+                <div style="display:flex;gap:10px;border-top:1px solid #eee;padding-top:14px;">
+                    <button onclick="confirmarEntregaEpi('total')" style="flex:1;padding:10px;background:#27ae60;color:white;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">Entregar Tudo</button>
+                    <button onclick="confirmarEntregaEpi('parcial')" style="flex:1;padding:10px;background:#f39c12;color:white;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">Entrega Parcial</button>
+                </div>
+            </div>
+        </div>`;
+        document.body.appendChild(divModal);
+    }
+}, 1000);
+
+// 2. Lógica do Modal de EPI
+window.abrirModalEntregaEpi = function(docId) {
+    let epi = (typeof dE !== 'undefined' ? dE : []).find(e => e.id === String(docId));
+    if(!epi) return;
+    document.getElementById('modalEntregaEpiId').value = docId;
+    document.getElementById('modalEntregaEpiNome').innerText = "Colaborador: " + (epi.nome || "Não informado");
+    let itensArray = epi.itens ? epi.itens.split(',').map(i => i.trim()).filter(i => i) : [];
+    let htmlItens = "";
+    itensArray.forEach(item => {
+        let jaEntregue = item.includes('[ENTREGUE]');
+        let nomeItem = item.replace('[ENTREGUE]', '').trim();
+        htmlItens += `<label style="display:flex;align-items:center;padding:10px;border:1px solid #eee;border-radius:6px;margin-bottom:5px;background:${jaEntregue ? '#f9f9f9' : '#fff'}">
+            <input type="checkbox" class="chk-entrega-epi" value="${nomeItem}" ${jaEntregue ? 'checked disabled' : ''} style="margin-right:10px;transform:scale(1.2);">
+            <span style="font-weight:bold;color:${jaEntregue ? '#aaa' : '#333'}; ${jaEntregue ? 'text-decoration:line-through;' : ''}">${nomeItem}</span>
+            ${jaEntregue ? '<span style="margin-left:auto;font-size:11px;color:#27ae60;font-weight:bold;">Entregue</span>' : ''}
+        </label>`;
+    });
+    document.getElementById('modalEntregaEpiItens').innerHTML = htmlItens;
+    document.getElementById('modalEntregaEpi').style.display = 'flex';
+};
+window.fecharModalEntregaEpi = function() { document.getElementById('modalEntregaEpi').style.display = 'none'; };
+window.confirmarEntregaEpi = function(tipo) {
+    let docId = document.getElementById('modalEntregaEpiId').value;
+    let epi = dE.find(e => e.id === docId);
+    if(!epi) return;
+    let chks = document.querySelectorAll('.chk-entrega-epi');
+    let itensAt = [], todosEntregues = true;
+    chks.forEach(chk => {
+        if(chk.disabled || chk.checked || tipo === 'total') itensAt.push(chk.value + " [ENTREGUE]");
+        else { itensAt.push(chk.value); todosEntregues = false; }
+    });
+    epi.itens = itensAt.join(', ');
+    epi.status = (tipo === 'total' || todosEntregues) ? 'Entregue' : 'Entrega Parcial';
+    if(typeof window.saveToDB === 'function') window.saveToDB('epis', docId, epi);
+    fecharModalEntregaEpi();
+    if(typeof renderEpi === 'function') renderEpi();
+    alert("Entrega processada com sucesso!");
+};
+
+// 3. O Detetive e Intercetador (Resolve o problema dos Cargos e do Botão)
+setInterval(() => {
+    let quadro = document.getElementById('quadro-info-display');
+    if (quadro && typeof dRH !== 'undefined') {
+        // Pega todos os ativos
+        let ativos = dRH.filter(c => {
+            let status = (c.status || c.Status || "").toString().toLowerCase();
+            return status.includes('ativo');
+        });
+
+        // Função inteligente que procura a coluna de Cargo não importa como se chame
+        const acharCargo = (c) => {
+            let chaves = Object.keys(c);
+            let chaveCargo = chaves.find(k => k.toLowerCase().includes('cargo') || k.toLowerCase().includes('fun'));
+            return chaveCargo ? String(c[chaveCargo]).toLowerCase() : "";
+        };
+
+        let sups = ativos.filter(c => acharCargo(c).includes('supervis')).length;
+        let lids = ativos.filter(c => acharCargo(c).includes('lider') || acharCargo(c).includes('líder')).length;
+        let ops = ativos.filter(c => acharCargo(c).includes('operador')).length;
+        
+        quadro.innerHTML = `📊 <strong>${ativos.length} ativos</strong> | ${sups} supervisores | ${lids} líderes | ${ops} operadores`;
+    }
+
+    // Varre a tela à procura do botão "Entregar" que não esteja a funcionar
+    document.querySelectorAll('button').forEach(btn => {
+        let texto = btn.innerText.trim().toLowerCase();
+        let acao = btn.getAttribute('onclick') || "";
+        if ((texto === 'entregar' || texto.includes('entregar epi')) && !acao.includes('abrirModalEntregaEpi')) {
+            let idMatch = acao.match(/'([^']+)'/) || acao.match(/"([^"]+)"/); 
+            if (idMatch && idMatch[1]) {
+                btn.setAttribute('onclick', `abrirModalEntregaEpi('${idMatch[1]}')`);
+            }
+        }
+    });
+}, 1000);
+
+// Intercetador Absoluto: Impede que o sistema use a função antiga de entregar
+if (typeof window.mudarStatusEpi !== 'undefined' && !window.mudarStatusEpi_modificada) {
+    const funcaoAntiga = window.mudarStatusEpi;
+    window.mudarStatusEpi = function(id, novoStatus) {
+        if (novoStatus === 'Entregue' || novoStatus === 'Entregar') {
+            abrirModalEntregaEpi(id);
+        } else {
+            funcaoAntiga(id, novoStatus);
+        }
+    };
+    window.mudarStatusEpi_modificada = true;
+}
+// ==========================================
+// FREIO DE SALVAMENTO AUTOMÁTICO (Evita Esgotar o Firebase)
+// ==========================================
+if (typeof window.autoSaveData === 'function' && !window.autoSaveData_protegido) {
+    const funcaoAutoSaveOriginal = window.autoSaveData;
+    let temporizadorAutoSave = null;
+
+    window.autoSaveData = function(...args) {
+        // Cancela o salvamento anterior se a função for chamada rápido demais
+        clearTimeout(temporizadorAutoSave);
+        
+        // Aguarda 2.5 segundos de "inatividade" antes de mandar salvar na nuvem
+        temporizadorAutoSave = setTimeout(() => {
+            funcaoAutoSaveOriginal.apply(this, args);
+        }, 2500); 
+    };
+    
+    window.autoSaveData_protegido = true;
+    console.log("Freio de AutoSave ativado com sucesso.");
+}
