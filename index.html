@@ -128,6 +128,25 @@
 .epi-badge-pend{background:#fff3cd;color:#856404;padding:3px 9px;border-radius:10px;font-size:10px;font-weight:800;white-space:nowrap;}
 .epi-badge-entg{background:#d5f5e3;color:#1a7a3c;padding:3px 9px;border-radius:10px;font-size:10px;font-weight:800;white-space:nowrap;}
 .epi-reg-row-entg td{background:#f0fff4 !important;}
+
+/* ===== METAS ===== */
+.meta-card{background:white;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,.08);overflow:hidden;margin-bottom:18px;}
+.meta-card-header{padding:14px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;}
+.meta-gauge-row{display:flex;align-items:center;gap:16px;padding:16px 18px;}
+.meta-gauge-bar-bg{flex:1;height:22px;background:#f0f0f0;border-radius:11px;overflow:hidden;position:relative;}
+.meta-gauge-bar-fill{height:100%;border-radius:11px;transition:width .6s cubic-bezier(.4,0,.2,1);}
+.meta-gauge-pct{font-size:22px;font-weight:900;min-width:65px;text-align:right;}
+.meta-kpi-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;padding:0 18px 16px;}
+.meta-kpi{background:#f8f9fa;border-radius:8px;padding:12px;text-align:center;}
+.meta-kpi-lbl{font-size:10px;font-weight:800;color:#999;text-transform:uppercase;margin-bottom:4px;}
+.meta-kpi-val{font-size:22px;font-weight:900;color:#2c3e50;}
+.meta-ia-box{margin:0 18px 16px;background:linear-gradient(135deg,#f0f4ff,#fafbff);border:1px solid #c8d8ff;border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.7;color:#2c3e50;}
+.meta-ia-box .ia-title{font-size:11px;font-weight:800;color:#3498db;text-transform:uppercase;margin-bottom:6px;}
+.meta-impact-item{display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-bottom:1px solid #f0f0f0;font-size:12px;}
+.meta-impact-name{font-weight:700;color:#2c3e50;}
+.meta-impact-dias{font-weight:900;color:#e74c3c;background:#fdedec;padding:2px 8px;border-radius:10px;font-size:11px;}
+.meta-total-badge{display:flex;align-items:center;gap:16px;padding:14px 18px;background:linear-gradient(135deg,#2c3e50,#34495e);color:white;border-radius:10px;margin-bottom:18px;flex-wrap:wrap;}
+.meta-chart-box{padding:0 18px 16px;}
 </style>
 </head>
 <body>
@@ -243,6 +262,7 @@
         <div class="tab-btn" onclick="switchTab(this, 'picking', 'picking-active')"><i class="fas fa-map-location-dot"></i> MAPEAMENTO PICKING</div>
         <div class="tab-btn" onclick="switchTab(this, 'modulos', 'modulos-active')"><i class="fas fa-cubes"></i> MÓDULOS</div>
         <div class="tab-btn" onclick="switchTab(this, 'dashboard', 'active')"><i class="fas fa-chart-pie"></i> DASHBOARD</div>
+        <div class="tab-btn" onclick="switchTab(this,'metas','metas-active');initMetas();"><i class="fas fa-bullseye"></i> METAS <span class="version-badge-new">NOVO</span></div>
         <div class="tab-btn" onclick="switchTab(this, 'historico', 'hist-active')"><i class="fas fa-history"></i> HISTÓRICO</div>
         <div class="tab-btn" onclick="switchTab(this,'giro-alocacao','giro-active');initGiroAlocacao();"><i class="fas fa-boxes"></i> GIRO DE ALOCAÇÃO <span class="version-badge-new">NOVO</span></div>
     </div>
@@ -254,8 +274,7 @@
     <div class="tab-btn" onclick="switchTab(this, 'rh-ferias', 'rh-active')"><i class="fas fa-umbrella-beach"></i> FÉRIAS</div>
     <div class="tab-btn" onclick="switchTab(this,'rh-uniforme','rh-active');renderEpiTab();"><i class="fas fa-vest"></i> UNIFORME &amp; EPI <span class="version-badge-new">NOVO</span></div>
     <div class="tab-btn" onclick="switchTab(this, 'rh-banco', 'rh-active')"><i class="fas fa-business-time"></i> BANCO DE HORAS</div>
-    <div class="tab-btn" onclick="switchTab(this, 'rh-absenteismo', 'rh-active')"><i class="fas fa-user-injured"></i> ABSENTEÍSMO</div>
-    <div class="tab-btn" onclick="switchTab(this, 'rh-ponto', 'rh-active'); renderPontoMensal();"><i class="fas fa-user-clock"></i> PONTO MENSAL</div>
+    <div class="tab-btn" onclick="switchTab(this,'rh-absenteismo','rh-active');renderPontoMensal();"><i class="fas fa-user-clock"></i> ABSENTEÍSMO &amp; PONTO</div>
     <div class="tab-btn" onclick="switchTab(this, 'rh-dashboard', 'rh-active'); renderDashboardRH();"><i class="fas fa-chart-line"></i> DASHBOARD RH <span class="version-badge-new">NOVO</span></div>
 </div>
 
@@ -553,6 +572,142 @@
             </div>
         </div>
 
+
+        <!-- ══════════ METAS ══════════ -->
+        <div id="view-metas" class="view-section">
+            <div class="scroll-content">
+
+                <div class="card" style="border-left:5px solid #e74c3c;background:linear-gradient(135deg,#fff5f5,#fff);margin-bottom:16px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+                        <div>
+                            <h3 style="margin:0;color:#e74c3c;"><i class="fas fa-bullseye"></i> Painel de Metas — CD</h3>
+                            <p style="font-size:12px;color:#666;margin:4px 0 0;">Absenteísmo + Ressuprimento = <strong>70% da meta total do CD</strong>. Os 30% restantes sem medição definida.</p>
+                        </div>
+                        <div id="meta-periodo-label" style="font-size:12px;color:#888;font-weight:700;"></div>
+                        <button class="btn btn-blue" onclick="calcularMetas()"><i class="fas fa-sync-alt"></i> Atualizar</button>
+                    </div>
+                </div>
+
+                <!-- Score geral -->
+                <div class="meta-total-badge">
+                    <div style="font-size:36px;"><i class="fas fa-trophy"></i></div>
+                    <div style="flex:1;">
+                        <div style="font-size:11px;opacity:.7;text-transform:uppercase;font-weight:800;margin-bottom:6px;">Score Total CD (70% medido)</div>
+                        <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end;">
+                            <div><div style="font-size:10px;opacity:.7;">Absenteísmo</div><div id="meta-res-abs-pct" style="font-size:20px;font-weight:900;">—</div></div>
+                            <div style="opacity:.4;font-size:18px;padding-bottom:2px;">+</div>
+                            <div><div style="font-size:10px;opacity:.7;">Ressuprimento</div><div id="meta-res-rss-pct" style="font-size:20px;font-weight:900;">—</div></div>
+                            <div style="opacity:.4;font-size:18px;padding-bottom:2px;">=</div>
+                            <div><div style="font-size:10px;opacity:.7;">Score</div><div id="meta-score-total" style="font-size:28px;font-weight:900;color:#f1c40f;">—</div></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- META 1: ABSENTEÍSMO -->
+                <div class="meta-card">
+                    <div class="meta-card-header" style="background:linear-gradient(135deg,#e74c3c,#c0392b);color:white;">
+                        <div>
+                            <div style="font-size:14px;font-weight:900;"><i class="fas fa-user-injured"></i> Meta 1 — Absenteísmo</div>
+                            <div style="font-size:11px;opacity:.85;margin-top:2px;">Meta: <strong>&lt;4%</strong> | Período: 01 ao último dia do mês | Folgas excluídas</div>
+                        </div>
+                        <div id="abs-meta-badge" style="background:rgba(255,255,255,.15);border-radius:20px;padding:5px 14px;font-size:13px;font-weight:900;">Calculando...</div>
+                    </div>
+                    <div class="meta-gauge-row">
+                        <div style="font-size:11px;font-weight:800;color:#999;min-width:30px;">0%</div>
+                        <div class="meta-gauge-bar-bg">
+                            <div id="abs-gauge-fill" class="meta-gauge-bar-fill" style="width:0%;background:#27ae60;"></div>
+                            <div style="position:absolute;top:0;left:4%;width:2px;height:100%;background:rgba(231,76,60,.6);"></div>
+                        </div>
+                        <div style="font-size:11px;color:#e74c3c;min-width:45px;text-align:right;">4% ⚠</div>
+                        <div class="meta-gauge-pct" id="abs-gauge-pct" style="color:#27ae60;">0.0%</div>
+                    </div>
+                    <div class="meta-kpi-row">
+                        <div class="meta-kpi" style="border-top:3px solid #e74c3c;"><div class="meta-kpi-lbl">Índice Atual</div><div class="meta-kpi-val" id="abs-kpi-taxa" style="color:#e74c3c;">—</div></div>
+                        <div class="meta-kpi" style="border-top:3px solid #3498db;"><div class="meta-kpi-lbl">Dias Ausentes</div><div class="meta-kpi-val" id="abs-kpi-dias">—</div></div>
+                        <div class="meta-kpi" style="border-top:3px solid #f39c12;"><div class="meta-kpi-lbl">Quadro Ativo</div><div class="meta-kpi-val" id="abs-kpi-total">—</div></div>
+                        <div class="meta-kpi" style="border-top:3px solid #8e44ad;"><div class="meta-kpi-lbl">Dias Úteis Mês</div><div class="meta-kpi-val" id="abs-kpi-uteis">—</div></div>
+                        <div class="meta-kpi" style="border-top:3px solid #27ae60;"><div class="meta-kpi-lbl">Tolerância (dias)</div><div class="meta-kpi-val" id="abs-kpi-tol" style="color:#27ae60;">—</div></div>
+                        <div class="meta-kpi" style="border-top:3px solid #e74c3c;"><div class="meta-kpi-lbl">Saldo p/ Meta</div><div class="meta-kpi-val" id="abs-kpi-saldo">—</div></div>
+                    </div>
+                    <div class="meta-chart-box">
+                        <div style="font-size:11px;font-weight:800;color:#999;text-transform:uppercase;margin-bottom:8px;"><i class="fas fa-chart-line"></i> Evolução Diária do Índice no Mês</div>
+                        <canvas id="chartAbsMeta" height="80"></canvas>
+                    </div>
+                    <div class="meta-ia-box" id="abs-ia-box">
+                        <div class="ia-title"><i class="fas fa-robot"></i> Análise IA</div>
+                        <div id="abs-ia-text">Clique em Atualizar para calcular.</div>
+                    </div>
+                    <div style="margin:0 18px 6px;font-size:11px;font-weight:800;color:#e74c3c;text-transform:uppercase;"><i class="fas fa-exclamation-triangle"></i> Colaboradores com Maior Impacto</div>
+                    <div style="margin:0 18px 16px;max-height:200px;overflow-y:auto;border:1px solid #fde8e8;border-radius:8px;" id="abs-impact-list">
+                        <div style="padding:20px;text-align:center;color:#999;font-size:12px;">Sem ocorrências no mês.</div>
+                    </div>
+                </div>
+
+                <!-- META 2: RESSUPRIMENTO -->
+                <div class="meta-card">
+                    <div class="meta-card-header" style="background:linear-gradient(135deg,#2980b9,#1a6a9a);color:white;">
+                        <div>
+                            <div style="font-size:14px;font-weight:900;"><i class="fas fa-dolly"></i> Meta 2 — Atendimento de Ressuprimento</div>
+                            <div style="font-size:11px;opacity:.85;margin-top:2px;">Meta: <strong>≥90%</strong> | Pedido × Atendido por dia | Período: 01 ao último dia</div>
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            <div id="rss-meta-badge" style="background:rgba(255,255,255,.15);border-radius:20px;padding:5px 14px;font-size:13px;font-weight:900;">Aguardando importação</div>
+                            <label class="btn" style="background:rgba(255,255,255,.2);color:white;cursor:pointer;padding:6px 12px;font-size:11px;border-radius:6px;border:1px solid rgba(255,255,255,.4);">
+                                <i class="fas fa-file-upload"></i> Importar XLSX
+                                <input type="file" id="rss-file-input" accept=".xlsx,.xls,.csv" hidden onchange="importarRessuprimento(this)">
+                            </label>
+                        </div>
+                    </div>
+                    <div class="meta-gauge-row">
+                        <div style="font-size:11px;font-weight:800;color:#999;min-width:30px;">0%</div>
+                        <div class="meta-gauge-bar-bg">
+                            <div id="rss-gauge-fill" class="meta-gauge-bar-fill" style="width:0%;background:#3498db;"></div>
+                            <div style="position:absolute;top:0;left:90%;width:2px;height:100%;background:rgba(39,174,96,.7);"></div>
+                        </div>
+                        <div style="font-size:11px;color:#27ae60;min-width:45px;text-align:right;">90% ✓</div>
+                        <div class="meta-gauge-pct" id="rss-gauge-pct" style="color:#3498db;">—</div>
+                    </div>
+                    <div class="meta-kpi-row">
+                        <div class="meta-kpi" style="border-top:3px solid #3498db;"><div class="meta-kpi-lbl">% Atendido</div><div class="meta-kpi-val" id="rss-kpi-pct" style="color:#3498db;">—</div></div>
+                        <div class="meta-kpi" style="border-top:3px solid #27ae60;"><div class="meta-kpi-lbl">Total Pedido</div><div class="meta-kpi-val" id="rss-kpi-ped">—</div></div>
+                        <div class="meta-kpi" style="border-top:3px solid #2ecc71;"><div class="meta-kpi-lbl">Total Atendido</div><div class="meta-kpi-val" id="rss-kpi-ate">—</div></div>
+                        <div class="meta-kpi" style="border-top:3px solid #e74c3c;"><div class="meta-kpi-lbl">Total Pendente</div><div class="meta-kpi-val" id="rss-kpi-pend" style="color:#e74c3c;">—</div></div>
+                        <div class="meta-kpi" style="border-top:3px solid #f39c12;"><div class="meta-kpi-lbl">Dias Importados</div><div class="meta-kpi-val" id="rss-kpi-dias">—</div></div>
+                        <div class="meta-kpi" style="border-top:3px solid #e74c3c;"><div class="meta-kpi-lbl">Gap p/ Meta</div><div class="meta-kpi-val" id="rss-kpi-gap" style="color:#e74c3c;">—</div></div>
+                    </div>
+                    <!-- Gráfico: % atendimento por dia -->
+                    <div class="meta-chart-box">
+                        <div style="font-size:11px;font-weight:800;color:#999;text-transform:uppercase;margin-bottom:8px;">
+                            <i class="fas fa-chart-bar"></i> Atendimento por Dia (%) — linha vermelha = meta 90%
+                        </div>
+                        <canvas id="chartRssMeta" height="90"></canvas>
+                    </div>
+                    <div class="meta-ia-box" id="rss-ia-box" style="border-color:#aed6f1;background:linear-gradient(135deg,#eaf4fd,#f8fbff);">
+                        <div class="ia-title" style="color:#2980b9;"><i class="fas fa-robot"></i> Análise IA — Ressuprimento</div>
+                        <div id="rss-ia-text">Importe o arquivo de Atendimento de Ressuprimento para ver a análise.</div>
+                    </div>
+                    <!-- Tabela por dia -->
+                    <div style="padding:0 18px 16px;">
+                        <div style="font-size:11px;font-weight:800;color:#999;text-transform:uppercase;margin-bottom:8px;"><i class="fas fa-calendar-alt"></i> Atendimento Diário Detalhado</div>
+                        <div style="overflow-x:auto;max-height:260px;overflow-y:auto;">
+                            <table style="min-width:500px;font-size:11px;width:100%;border-collapse:collapse;">
+                                <thead><tr style="background:#2980b9;color:white;position:sticky;top:0;z-index:2;">
+                                    <th style="padding:7px 12px;text-align:left;">Dia</th>
+                                    <th style="padding:7px 12px;">Pedido</th>
+                                    <th style="padding:7px 12px;">Atendido</th>
+                                    <th style="padding:7px 12px;">% Atend.</th>
+                                    <th style="padding:7px 12px;">Pendente</th>
+                                    <th style="padding:7px 12px;">Status</th>
+                                </tr></thead>
+                                <tbody id="rss-tbody">
+                                    <tr><td colspan="6" style="text-align:center;padding:25px;color:#999;">Importe o arquivo para visualizar.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div id="view-historico" class="view-section">
             <div class="scroll-content">
                 <div class="card" style="border-left: 5px solid var(--gold);">
@@ -700,9 +855,24 @@
             </div>
         </div>
 
-        <!-- ABSENTEÍSMO -->
+        <!-- ABSENTEÍSMO & PONTO MENSAL — aba unificada -->
         <div id="view-rh-absenteismo" class="view-section">
             <div class="scroll-content">
+
+                <!-- Sub-tabs internas -->
+                <div style="display:flex;gap:0;margin-bottom:16px;border-bottom:2px solid #eee;">
+                    <button id="btn-sub-abs" onclick="subTabAbs('abs')"
+                        style="padding:9px 20px;border:none;background:var(--red);color:white;font-weight:800;font-size:12px;cursor:pointer;border-radius:8px 8px 0 0;margin-right:4px;">
+                        <i class="fas fa-user-injured"></i> ABSENTEÍSMO
+                    </button>
+                    <button id="btn-sub-ponto" onclick="subTabAbs('ponto')"
+                        style="padding:9px 20px;border:none;background:#e9ecef;color:#555;font-weight:800;font-size:12px;cursor:pointer;border-radius:8px 8px 0 0;">
+                        <i class="fas fa-user-clock"></i> PONTO MENSAL
+                    </button>
+                </div>
+
+                <!-- Painel Absenteísmo -->
+                <div id="sub-painel-abs">
                 <div class="rh-grid">
                     <div class="card" style="border-left: 5px solid var(--red);">
                         <h3 style="color:var(--red); margin:0;"><i class="fas fa-user-injured"></i> Lançamento de Ausências</h3>
@@ -731,13 +901,11 @@
                         <div class="card"><h4 style="margin-top:0;">Histórico Recente</h4><div style="max-height: 250px; overflow-y: auto;"><table><thead><tr><th>Data</th><th style="text-align:left;">Nome</th><th>Motivo</th><th></th></tr></thead><tbody id="tbAbs"><tr><td colspan="4" style="text-align:center; color:#999;">Nenhum registo.</td></tr></tbody></table></div></div>
                     </div>
                 </div>
-            </div>
-        </div>
+                </div><!-- /sub-painel-abs -->
 
-        <!-- PONTO MENSAL -->
-        <div id="view-rh-ponto" class="view-section">
-            <div class="scroll-content">
-                <div class="rh-grid">
+                <!-- Painel Ponto Mensal -->
+                <div id="sub-painel-ponto" style="display:none;">
+<div class="rh-grid">
                     <div class="card" style="border-left: 5px solid var(--purple);">
                         <h3 style="color:var(--purple); margin:0;"><i class="fas fa-user-clock"></i> Lançamento de Ocorrência de Ponto</h3>
                         <p style="font-size:11px; color:#666; margin-top:5px;">A lista de colaboradores é carregada automaticamente a partir do Quadro Oficial.</p>
@@ -1270,19 +1438,27 @@ function getStatusPill(status) {
 }
 
 function updateRHKPIs(lista) {
-    var ativos = lista.filter(function(c) { var s = (c.status||c.STATUS||'ATIVO').toUpperCase(); return s === 'ATIVO' || s === 'AUTO'; }).length;
-    var lideres = lista.filter(function(c) { var f = (c.funcao||c.FUNCAO||'').toUpperCase(); return f.includes('LÍDER') || f.includes('LIDER'); }).length;
-    var ops = lista.filter(function(c) { var f = (c.funcao||c.FUNCAO||'').toUpperCase(); return f.includes('OPERADOR') || f.includes('SEPARADOR'); }).length;
-    var sups = lista.filter(function(c) { var f = (c.funcao||c.FUNCAO||'').toUpperCase(); return f.includes('SUPERVISOR') || f.includes('SUPERVISORA'); }).length;
-
+    // Conta apenas ATIVO puro (pedido: "considerar como ativos apenas quem realmente está ativo")
+    // Líderes/Operadores/Supervisores: não-INATIVO classificado por função
+    var ativos = 0, lideres = 0, ops = 0, sups = 0;
+    (lista || []).forEach(function(c) {
+        var s = (c.status || c.STATUS || c.statusManual || 'ATIVO').toUpperCase();
+        if (s === 'INATIVO') return;
+        // Total ativos = apenas status ATIVO real
+        if (s === 'ATIVO' || s === 'AUTO') ativos++;
+        // Função: busca em todos os formatos de chave possíveis
+        var f = (c.funcao || c.FUNCAO || c['Função'] || c['FUNÇÃO'] || c['Funcao'] || '').toUpperCase();
+        if      (f.includes('SUPERVISOR') || f.includes('SUPERVISORA')) sups++;
+        else if (f.includes('LÍDER')      || f.includes('LIDER'))       lideres++;
+        else if (f.includes('OPERADOR')   || f.includes('SEPARADOR'))   ops++;
+    });
     var setVal = function(id, v) { var el = document.getElementById(id); if(el) el.textContent = v; };
     setVal('rh-tot', ativos);
     setVal('rh-lid', lideres);
-    setVal('rh-op', ops);
+    setVal('rh-op',  ops);
     setVal('rh-sup', sups);
-
     var kpis = document.getElementById('rh-kpis');
-    if (kpis && lista.length > 0) kpis.style.display = 'grid';
+    if (kpis && (lista||[]).length > 0) kpis.style.display = 'grid';
 }
 
 // Excluir colaborador
@@ -1481,189 +1657,7 @@ var _origRenderFerias = window.renderTbFerias || window.renderFerias;
 // ----------------------------------------------------------------
 // DASHBOARD RH - renderização
 // ----------------------------------------------------------------
-window.renderDashboardRH = async function() {
-    var btn = document.querySelector('[onclick*="renderDashboardRH"]');
-    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Actualizando...'; }
-    try {
-        var ano = new Date().getFullYear();
-        setDRH('drh-ano-label', ano);
-
-        // Carrega do Firebase em paralelo (fonte canónica)
-        var results = await Promise.all([
-            window.getFromDB('dRH').catch(function(){return null;}),
-            window.getFromDB('rhData').catch(function(){return null;}),
-            dbCloud.collection('logistica_ferias_inbox').where('status','==','PENDENTE').get().catch(function(){return null;}),
-            dbCloud.collection('logistica_epi_registros').get().catch(function(){return null;})
-        ]);
-        var dRHfb    = results[0];
-        var rhDataFb = results[1];
-        var pendInbox = results[2];
-        var epiRegs   = results[3];
-
-        // Fallback: usa variáveis globais já carregadas na sessão
-        var lista = (dRHfb && dRHfb.length) ? dRHfb : (window.dRH || []);
-        var rh    = (rhDataFb && Object.keys(rhDataFb).length) ? rhDataFb : (window.rhData || {});
-
-        if (!lista.length) {
-            setDRH('ai-colab-insight', '⚠️ Nenhum colaborador encontrado. Importe o quadro de colaboradores primeiro.', true);
-            return;
-        }
-
-        var hoje = new Date(); hoje.setHours(0, 0, 0, 0);
-
-        // ── COLABORADORES ─────────────────────────────────────────
-        var ativos = 0, inativos = 0, entradasAno = 0, supCount = 0, liderCount = 0, opCount = 0;
-        lista.forEach(function(c) {
-            var mat  = c['Matrícula'] || c['Matricula'] || c['MATRICULA'] || '';
-            var func = (c['Função']   || c['Funcao']   || c['FUNÇÃO']   || '').toUpperCase();
-            var s    = (c['Status']   || c['STATUS']   || 'ATIVO').toUpperCase();
-            var rhM  = rh[mat] || {};
-            var sf   = (rhM.statusManual && rhM.statusManual !== 'AUTO') ? rhM.statusManual.toUpperCase() : s;
-            if (sf === 'INATIVO') { inativos++; return; }
-            ativos++;
-            if (func.includes('SUPERVISOR')) supCount++;
-            else if (func.includes('LIDER') || func.includes('LÍDER')) liderCount++;
-            else opCount++;
-            var admRaw = c['Admissão'] || c['Admissao'] || c['ADMISSÃO'] || '';
-            var admY = 0;
-            if (admRaw.includes('/')) admY = parseInt(admRaw.split('/')[2] || 0);
-            else if (admRaw.includes('-')) admY = parseInt(admRaw.split('-')[0] || 0);
-            if (admY === ano) entradasAno++;
-        });
-        var turnover = inativos > 0 ? ((inativos / Math.max(1, ativos + inativos)) * 100).toFixed(1) : '0.0';
-        var pendRep  = (typeof pendenciasRH !== 'undefined') ? pendenciasRH.length : 0;
-
-        setDRH('drh-entradas',   entradasAno);
-        setDRH('drh-saidas',     inativos);
-        setDRH('drh-turnover',   turnover + '%');
-        setDRH('drh-ativos',     ativos);
-        setDRH('drh-reposicoes', pendRep);
-
-        var insC = '📊 Quadro: <strong>' + ativos + ' ativos</strong> | ' + supCount + ' supervisores | ' + liderCount + ' líderes | ' + opCount + ' operadores. ';
-        if (parseFloat(turnover) > 15) insC += '🚨 Turnover elevado (' + turnover + '%). Revisar retenção.';
-        else if (parseFloat(turnover) > 8) insC += '⚡ Turnover moderado (' + turnover + '%). Monitorar.';
-        else insC += '✅ Turnover controlado (' + turnover + '%). Quadro estável.';
-        if (pendRep > 0) insC += ' 🔴 <strong>' + pendRep + ' vaga(s) em reposição.</strong>';
-        setDRH('ai-colab-insight', insC, true);
-
-        // ── FÉRIAS — lê de rhData[mat].feriasInicio / feriasFim / limiteFerias ──
-        var fAtivas = 0, fVencidas = 0, em30 = 0;
-        lista.forEach(function(c) {
-            var mat = c['Matrícula'] || c['Matricula'] || c['MATRICULA'] || '';
-            var r   = rh[mat] || {};
-            if (r.feriasInicio && r.feriasFim) {
-                var fi = new Date(r.feriasInicio + 'T00:00:00');
-                var ff = new Date(r.feriasFim    + 'T00:00:00');
-                if (hoje >= fi && hoje <= ff) fAtivas++;
-            }
-            if (r.limiteFerias) {
-                var lim  = new Date(r.limiteFerias + 'T00:00:00');
-                var diff = (lim - hoje) / 86400000;
-                if (diff < 0 && !r.feriasInicio) fVencidas++;
-                else if (diff >= 0 && diff <= 30 && !r.feriasInicio) em30++;
-            }
-        });
-        var pendFer = pendInbox ? pendInbox.size : 0;
-        setDRH('drh-ferias-ativas',    fAtivas);
-        setDRH('drh-ferias-vencidas',  fVencidas);
-        setDRH('drh-ferias-a-vencer',  em30);
-        setDRH('drh-ferias-pendentes', pendFer);
-        var insFer = '';
-        if (fVencidas > 0) insFer += '🚨 <strong>' + fVencidas + ' colaborador(es) com férias vencidas</strong> — risco legal. ';
-        if (em30 > 0)      insFer += '⏰ ' + em30 + ' a vencer em 30 dias. ';
-        if (fAtivas > 0)   insFer += '🌴 ' + fAtivas + ' em gozo agora. ';
-        if (pendFer > 0)   insFer += '📬 ' + pendFer + ' solicitação(ões) pendente(s). ';
-        if (!insFer)       insFer  = '✅ Sem irregularidades de férias.';
-        setDRH('ai-ferias-insight', insFer, true);
-
-        // ── BANCO DE HORAS — lê de rhData[mat].banco ─────────────
-        var totPos = 0, totNeg = 0, qtdPos = 0, qtdNeg = 0;
-        Object.keys(rh).forEach(function(mat) {
-            var bh = typeof rh[mat].banco === 'number' ? rh[mat].banco : 0;
-            if (bh > 0)      { totPos += bh;           qtdPos++; }
-            else if (bh < 0) { totNeg += Math.abs(bh); qtdNeg++; }
-        });
-        var fmtBH = function(h) {
-            var a = Math.abs(h);
-            return (h < 0 ? '-' : '+') + String(Math.floor(a)).padStart(2, '0') + ':' + String(Math.round((a - Math.floor(a)) * 60)).padStart(2, '0');
-        };
-        setDRH('drh-bh-positivo',  fmtBH(totPos));
-        setDRH('drh-bh-negativo',  fmtBH(-totNeg));
-        setDRH('drh-bh-qtd-pos',   qtdPos);
-        setDRH('drh-bh-qtd-neg',   qtdNeg);
-        var insBH = '';
-        if (totPos > 100)               insBH += '⚠️ Saldo positivo elevado — risco de passivo trabalhista. ';
-        if (qtdNeg > ativos * 0.2)      insBH += '🔴 Mais de 20% do quadro com saldo negativo. ';
-        if (!insBH)                     insBH  = '✅ Banco de horas equilibrado.';
-        setDRH('ai-bh-insight', insBH, true);
-
-        // ── ABSENTEÍSMO — lê de rhData[mat].faltas[] ─────────────
-        var totalAbs = 0, diasAbs = 0, motCount = {}, pesCount = {}, absMeses = {};
-        lista.forEach(function(c) {
-            var mat  = c['Matrícula'] || c['Matricula'] || c['MATRICULA'] || '';
-            var nome = c['Nome'] || c['NOME'] || mat;
-            var faltas = (rh[mat] || {}).faltas || [];
-            faltas.forEach(function(f) {
-                totalAbs++;
-                var dias = parseInt(f.dias) || 1; diasAbs += dias;
-                var mot  = f.motivo || 'Outro';
-                motCount[mot]  = (motCount[mot]  || 0) + dias;
-                pesCount[nome] = (pesCount[nome] || 0) + dias;
-                var mk = (f.data || '').substring(0, 7) || 'N/A';
-                absMeses[mk]   = (absMeses[mk]   || 0) + dias;
-            });
-        });
-        var topMot = Object.keys(motCount).sort(function(a,b){return motCount[b]-motCount[a];})[0] || '—';
-        var topPes = Object.keys(pesCount).sort(function(a,b){return pesCount[b]-pesCount[a];})[0] || '—';
-        setDRH('drh-abs-total',  totalAbs);
-        setDRH('drh-abs-dias',   diasAbs);
-        setDRH('drh-abs-motivo', topMot.length > 22 ? topMot.slice(0,20)+'...' : topMot);
-        setDRH('drh-abs-pessoa', topPes.length > 22 ? topPes.slice(0,20)+'...' : topPes);
-        renderChartAbsMotivo(motCount);
-        renderChartAbsMensal2(absMeses);
-        var taxa = ativos > 0 ? ((diasAbs / (ativos * 22)) * 100).toFixed(1) : 0;
-        var insAbs = '📊 Taxa estimada: <strong>' + taxa + '%</strong>. ';
-        if (parseFloat(taxa) > 4) insAbs += '🚨 Acima do limite. Principal motivo: <strong>' + topMot + '</strong>.';
-        else if (parseFloat(taxa) > 2) insAbs += '⚠️ Taxa moderada. Monitorar.';
-        else insAbs += '✅ Dentro do padrão (<2%).';
-        setDRH('ai-abs-insight', insAbs, true);
-
-        // ── PONTO MENSAL — lê de rhData[mat].ponto[] ─────────────
-        var pTotal = 0, pFaltas = 0, pMarcacoes = 0, pOk = 0, pontoTipos = {};
-        Object.keys(rh).forEach(function(mat) {
-            ((rh[mat] || {}).ponto || []).forEach(function(p) {
-                pTotal++;
-                var tp = (p.tipo || '').toLowerCase(), ac = (p.acao || '').toLowerCase();
-                if (tp.includes('falta sem'))                                      pFaltas++;
-                if (tp.includes('marcação') || tp.includes('marcacao'))            pMarcacoes++;
-                if (ac.includes('justificado') || ac.includes('arquivado'))        pOk++;
-                pontoTipos[p.tipo || 'Outro'] = (pontoTipos[p.tipo || 'Outro'] || 0) + 1;
-            });
-        });
-        setDRH('drh-ponto-total',     pTotal);
-        setDRH('drh-ponto-faltas',    pFaltas);
-        setDRH('drh-ponto-marcacoes', pMarcacoes);
-        setDRH('drh-ponto-ok',        pOk);
-        renderChartPontoTipo(pontoTipos);
-        var insPonto = pTotal > 0
-            ? '🗓 <strong>' + pTotal + ' ocorrência(s)</strong>.' + (pFaltas > 5 ? ' ⚠️ Faltas sem justificativa: ' + pFaltas + '.' : '') + (pMarcacoes > 3 ? ' 📋 ' + pMarcacoes + ' marcações incorretas.' : '')
-            : 'Nenhuma ocorrência de ponto registada.';
-        setDRH('ai-ponto-insight', insPonto, true);
-
-        // ── EPI ───────────────────────────────────────────────────
-        var epiTotal = 0, epiEntg = 0;
-        if (epiRegs) epiRegs.forEach(function(d) { epiTotal++; if (d.data().status === 'entregue') epiEntg++; });
-        setDRH('drh-epi-total',     epiTotal);
-        setDRH('drh-epi-entregues', epiEntg);
-        setDRH('drh-epi-pendentes', epiTotal - epiEntg);
-
-    } catch(e) {
-        console.error('Dashboard RH erro:', e);
-        setDRH('ai-colab-insight', '❌ Erro ao carregar dados: ' + e.message, true);
-    } finally {
-        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-sync-alt"></i> Atualizar Painel'; }
-    }
-};
+// renderDashboardRH: implementação async em logica.js (não redefinir aqui)
 
 // renderChartAbsMensal2: aceita objeto {mes: dias} (novo formato do dashboard)
 function renderChartAbsMensal2(meses) {
@@ -1763,6 +1757,44 @@ function initPatchV164() {
 })(); // fim IIFE patch v164
 </script>
 
+
+<!-- Modal Entrega EPI por item -->
+<div id="modalEntregaEpi" class="modal-overlay" style="display:none;">
+    <div class="modal" style="width:490px;max-height:90vh;overflow-y:auto;">
+        <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #27ae60;padding-bottom:10px;margin-bottom:15px;">
+            <h3 style="margin:0;color:#27ae60;"><i class="fas fa-box-open"></i> Confirmar Entrega</h3>
+            <button onclick="document.getElementById('modalEntregaEpi').style.display='none'"
+                style="background:none;border:none;font-size:24px;cursor:pointer;color:#999;">&times;</button>
+        </div>
+        <div id="modalEntregaNome" style="background:#f0fff4;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:14px;font-weight:700;color:#1a7a3c;"></div>
+        <p style="font-size:12px;color:#555;margin:0 0 12px;background:#d5f5e3;padding:8px 12px;border-radius:6px;border-left:3px solid #27ae60;">
+            <i class="fas fa-info-circle" style="color:#27ae60;"></i>
+            Marque os itens <strong>entregues agora</strong>. Itens já entregues aparecem desabilitados.
+        </p>
+        <div id="modalEntregaItens" style="margin-bottom:16px;"></div>
+        <div style="display:flex;gap:8px;border-top:1px solid #eee;padding-top:14px;flex-wrap:wrap;">
+            <button onclick="entregarTudo()"
+                style="flex:1;padding:11px;background:#27ae60;color:white;border:none;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;min-width:140px;">
+                <i class="fas fa-check-double"></i> Entregar Tudo
+            </button>
+            <button onclick="confirmarEntregaParcial()"
+                style="flex:1;padding:11px;background:linear-gradient(135deg,#2980b9,#3498db);color:white;border:none;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;min-width:140px;">
+                <i class="fas fa-box-open"></i> Entregar Selecionados
+            </button>
+            <button onclick="document.getElementById('modalEntregaEpi').style.display='none'"
+                style="padding:11px 14px;background:#95a5a6;color:white;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+                Cancelar
+            </button>
+        </div>
+    </div>
+</div>
+
 <div id="modalAprovarEpi" class="modal-overlay" style="display:none;"><div class="modal" style="width:500px;max-height:90vh;overflow-y:auto;"><div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #8e44ad;padding-bottom:10px;margin-bottom:15px;"><h3 style="margin:0;color:#8e44ad;"><i class="fas fa-vest"></i> Aprovar Solicitacao EPI</h3><button onclick="document.getElementById('modalAprovarEpi').style.display='none'" style="background:none;border:none;font-size:24px;cursor:pointer;color:#999;">&times;</button></div><div id="modalAprovarEpiNome" style="background:#f9f5ff;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:14px;font-weight:700;color:#6c3483;"></div><p style="font-size:12px;color:#555;margin:0 0 12px;background:#fff3cd;padding:8px 12px;border-radius:6px;border-left:3px solid #f39c12;"><i class="fas fa-info-circle" style="color:#f39c12;"></i> <strong>Desmarque</strong> os itens que o colaborador ja possui.</p><div id="modalAprovarEpiItens" style="margin-bottom:16px;"></div><div style="display:flex;gap:10px;border-top:1px solid #eee;padding-top:14px;"><button id="btnConfirmarAprEpi" onclick="confirmarAprovacaoEpi()" style="flex:1;padding:12px;background:linear-gradient(135deg,#27ae60,#2ecc71);color:white;border:none;border-radius:8px;font-size:14px;font-weight:800;cursor:pointer;"><i class="fas fa-check"></i> Confirmar Aprovacao</button><button onclick="document.getElementById('modalAprovarEpi').style.display='none'" style="padding:12px 20px;background:#95a5a6;color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">Cancelar</button></div></div></div>
 </body>
-</html>
+</html
+                </div><!-- /sub-painel-ponto -->
+
+            </div><!-- /scroll-content -->
+        </div><!-- /view-rh-absenteismo -->
+
+>

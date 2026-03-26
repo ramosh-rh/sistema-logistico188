@@ -563,16 +563,10 @@ window.renderRHQuad = function() {
     });
 
     document.getElementById('rh-kpis').style.display = 'grid';
-    safeUpdate('rh-tot', fmtInt(ativos));
-    safeUpdate('rh-lid', fmtInt(lideres));
-    safeUpdate('rh-op',  fmtInt(ops));
-    safeUpdate('rh-sup', fmtInt(sups));   // ← supervisor agora é atualizado
-    
-    // Atualizar KPIs na aba Colaboradores também
-    const quadroInfo = document.getElementById('quadro-info-display');
-    if (quadroInfo) {
-        quadroInfo.innerHTML = `📊 <strong>${ativos} ativos</strong> | ${sups} supervisores | ${lideres} líderes | ${ops} operadores`;
-    }
+    safeUpdate('rh-tot', ativos);
+    safeUpdate('rh-lid', lideres);
+    safeUpdate('rh-op',  ops);
+    safeUpdate('rh-sup', sups);   // ← supervisor agora é atualizado
 };
 
 window.abrirModalRH = function() { document.getElementById('rhEditIndex').value = -1; document.getElementById('rhMat').value = ''; document.getElementById('rhNome').value = ''; document.getElementById('rhFunc').value = 'OPERADOR'; document.getElementById('rhAdm').value = ''; document.getElementById('rhStatus').value = 'AUTO'; document.getElementById('modalRHTitle').innerHTML = '<i class="fas fa-user-plus"></i> Novo Colaborador'; document.getElementById('modalRH').style.display = 'flex'; };
@@ -727,86 +721,11 @@ async function registrarAbs() {
     for (let i = 0; i < dias; i++) { let targetDate = new Date(baseDate.getTime() + (i * 86400000)); let brDate = targetDate.toLocaleDateString('pt-BR', { timeZone: 'UTC' }); rhData[mat].faltas.push({ data: brDate, motivo: motivo, stamp: targetDate.getTime() }); }
     rhData[mat].faltas.sort((a, b) => b.stamp - a.stamp);
     if (window.saveToDB) window.saveToDB('rhData', rhData);
-    document.getElementById('selAbsEmp').value = ''; document.getElementById('txtAbsDate').value = ''; document.getElementById('txtAbsDias').value = '1'; renderAbs(); renderPontoAbsConsolidado();
+    document.getElementById('selAbsEmp').value = ''; document.getElementById('txtAbsDate').value = ''; document.getElementById('txtAbsDias').value = '1'; renderAbs();
 }
 
-async function removeAbs(mat, idx) { if (confirm("Remover?")) { if (rhData[mat] && rhData[mat].faltas) { rhData[mat].faltas.splice(idx, 1); if (window.saveToDB) window.saveToDB('rhData', rhData); renderAbs(); renderPontoAbsConsolidado(); } } }
+async function removeAbs(mat, idx) { if (confirm("Remover?")) { if (rhData[mat] && rhData[mat].faltas) { rhData[mat].faltas.splice(idx, 1); if (window.saveToDB) window.saveToDB('rhData', rhData); renderAbs(); } } }
 
-window.renderPontoAbsConsolidado = function() {
-    const tb = document.getElementById('tbPontoAbsConsolidado');
-    if (!tb) return;
-    
-    let html = '';
-    let totalRegistros = 0;
-    
-    // Coletar todas as ocorrências (absenteísmo e ponto)
-    let ocorrencias = [];
-    
-    for (let mat in rhData) {
-        const rh = rhData[mat];
-        const emp = dRH.find(e => (e['Matrícula'] || e['Matricula'] || e['MATRICULA'] || '').toString() === mat);
-        const nome = emp ? (emp['Nome'] || emp['NOME']) : 'Desconhecido';
-        
-        // Adicionar faltas/absenteísmo
-        if (rh.faltas && rh.faltas.length > 0) {
-            rh.faltas.forEach(f => {
-                ocorrencias.push({
-                    data: f.data,
-                    stamp: f.stamp,
-                    mat: mat,
-                    nome: nome,
-                    tipo: 'Absenteísmo',
-                    descricao: f.motivo,
-                    acao: 'Registado',
-                    obs: ''
-                });
-            });
-        }
-        
-        // Adicionar ocorrências de ponto
-        if (rh.ponto && rh.ponto.length > 0) {
-            rh.ponto.forEach(p => {
-                ocorrencias.push({
-                    data: p.dataForm,
-                    stamp: p.stamp,
-                    mat: mat,
-                    nome: nome,
-                    tipo: 'Ponto',
-                    descricao: p.tipo,
-                    acao: p.acao,
-                    obs: p.obs
-                });
-            });
-        }
-    }
-    
-    // Ordenar por data decrescente
-    ocorrencias.sort((a, b) => b.stamp - a.stamp);
-    
-    // Renderizar tabela
-    if (ocorrencias.length === 0) {
-        tb.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:#999;">Nenhuma ocorrência registada.</td></tr>';
-        return;
-    }
-    
-    ocorrencias.forEach(occ => {
-        totalRegistros++;
-        let tipoColor = occ.tipo === 'Absenteísmo' ? 'background:#ffe8e8;color:#c0392b;' : 'background:#e8f4fd;color:#2980b9;';
-        let tipoIcon = occ.tipo === 'Absenteísmo' ? '<i class="fas fa-ban"></i>' : '<i class="fas fa-clock"></i>';
-        
-        html += `<tr style="border-bottom:1px solid #eee;">
-            <td style="font-weight:bold; font-size:12px;">${occ.data}</td>
-            <td style="text-align:left; font-size:12px;"><b>${occ.nome}</b><br><span style="font-size:9px; color:#888;">${occ.mat}</span></td>
-            <td style="font-size:11px; ${tipoColor}">${tipoIcon} ${occ.tipo}</td>
-            <td style="text-align:left; font-size:11px;">${occ.descricao}<br><span style="font-size:10px; color:#777; font-weight:normal;">${occ.obs || ''}</span></td>
-            <td><span style="padding:3px 6px; border-radius:4px; font-size:10px; font-weight:bold; background:#f0f0f0; color:#555;">${occ.acao}</span></td>
-        </tr>`;
-    });
-    
-    tb.innerHTML = html;
-    const cnt = document.getElementById('pontoAbsCount');
-    if (cnt) cnt.textContent = totalRegistros + ' ocorrência(s)';
-};
 
 // =========================================================================
 // PLANEJAMENTO E COLUNAS  (CORREÇÕES DE DINÂMICA)
@@ -1732,9 +1651,9 @@ window.loadEpiInbox=async function(forceRefresh){const body=document.getElementB
 window.abrirModalAprovar=function(i){const item=_epiInboxMap[i];if(!item)return;_epiAprovandoIdx=i;const d=item.data;const nEl=document.getElementById('modalAprovarEpiNome');if(nEl)nEl.innerHTML=`<i class="fas fa-user"></i> ${d.nomeCompleto||d.nome||'?'} <span style="color:#888;font-weight:400;font-size:12px;">(${d.matricula})</span>`;const iEl=document.getElementById('modalAprovarEpiItens');if(iEl){const req=EPI_ITEMS.filter(it=>d[it.k]);iEl.innerHTML=req.map(it=>`<label class="epi-item-chk"><input type="checkbox" id="chk_${it.k}" checked onchange="this.closest('label').style.opacity=this.checked?'1':'0.5'"><i class="${it.ico}" style="color:#8e44ad;font-size:15px;"></i><span style="font-weight:800;min-width:60px;">${it.lbl}:</span><span style="background:#8e44ad;color:white;border-radius:5px;padding:2px 9px;font-size:12px;">${d[it.k]}</span><span style="margin-left:auto;font-size:11px;color:#27ae60;font-weight:700;">Sera fornecido</span></label>`).join('');}const btn=document.getElementById('btnConfirmarAprEpi');if(btn){btn.disabled=false;btn.innerHTML='<i class="fas fa-check"></i> Confirmar Aprovacao';}document.getElementById('modalAprovarEpi').style.display='flex';};
 window.confirmarAprovacaoEpi=async function(){const item=_epiInboxMap[_epiAprovandoIdx];if(!item)return;const btn=document.getElementById('btnConfirmarAprEpi');if(btn){btn.disabled=true;btn.innerHTML='<i class="fas fa-circle-notch fa-spin"></i> Salvando...';}const d=item.data;const forn={};EPI_ITEMS.forEach(it=>{const chk=document.getElementById('chk_'+it.k);forn[it.k]=(chk&&chk.checked&&d[it.k])?d[it.k]:'-';});if(!Object.values(forn).some(v=>v!=='-')){alert('Selecione pelo menos um item!');if(btn){btn.disabled=false;btn.innerHTML='<i class="fas fa-check"></i> Confirmar Aprovacao';}return;}const nr={id:'tmp_'+Date.now(),mat:d.matricula,nome:d.nomeCompleto||d.nome||'',blusa:forn.blusa,calca:forn.calca,bermuda:forn.bermuda,casaco:forn.casaco,bota:forn.bota,luva:forn.luva,cinta:forn.cinta,dataAprov:new Date().toLocaleDateString('pt-BR'),dataAprovTs:Date.now(),status:'aprovado',dataEntrega:''};if(_epiCache.docs)_epiCache.docs.unshift(nr);document.getElementById('modalAprovarEpi').style.display='none';renderEpiTableFromCache();try{const[snapReg]=await Promise.all([dbCloud.collection('logistica_epi_registros').add({inboxId:item.id,mat:nr.mat,nome:nr.nome,blusa:nr.blusa,calca:nr.calca,bermuda:nr.bermuda,casaco:nr.casaco,bota:nr.bota,luva:nr.luva,cinta:nr.cinta,dataAprov:nr.dataAprov,dataAprovTs:nr.dataAprovTs,status:'aprovado',dataEntrega:''}),dbCloud.collection('logistica_epi_inbox').doc(item.id).update({status:'APROVADO'})]);if(_epiCache.docs){const idx=_epiCache.docs.findIndex(r=>r.id===nr.id);if(idx>=0)_epiCache.docs[idx].id=snapReg.id;}}catch(e){console.warn('EPI:',e);if(_epiCache.docs)_epiCache.docs=_epiCache.docs.filter(r=>r.id!==nr.id);renderEpiTableFromCache();alert('Erro: '+e.message);return;}loadEpiInbox(true);};
 window.rejeitarEpi=async function(i){const item=_epiInboxMap[i];if(!item||!confirm('Rejeitar?'))return;try{await dbCloud.collection('logistica_epi_inbox').doc(item.id).update({status:'REJEITADO'});}catch(e){}loadEpiInbox(true);};
-window.abrirModalEntregaEpi=function(docId){const doc=_epiCache.docs.find(r=>r.id===docId);if(!doc)return;document.getElementById('epiEntregaDocId').value=docId;const nEl=document.getElementById('modalEntregaNome');if(nEl)nEl.innerHTML=`${doc.nome} <span style="color:#888;font-weight:400;font-size:12px;">(${doc.mat})</span>`;const iEl=document.getElementById('modalEntregaItens');if(iEl){const itens=EPI_ITEMS.filter(it=>doc[it.k]&&doc[it.k]!=='-');iEl.innerHTML=itens.map(it=>`<label class="epi-item-chk"><input type="checkbox" id="entg_${it.k}" checked><i class="${it.ico}" style="color:#27ae60;font-size:15px;"></i><span style="font-weight:800;min-width:60px;">${it.lbl}:</span><span style="background:#d5f4e6;color:#27ae60;padding:2px 7px;border-radius:4px;font-weight:700;font-size:10px;">${doc[it.k]}</span></label>`).join('');}const radios=document.querySelectorAll('input[name="epiEntregaTipo"]');radios.forEach(r=>r.checked=r.value==='total');document.getElementById('modalEntregaEpi').style.display='flex';};window.confirmarEntregaEpi=async function(){const docId=document.getElementById('epiEntregaDocId').value;const tipoEntrega=document.querySelector('input[name="epiEntregaTipo"]:checked').value;const doc=_epiCache.docs.find(r=>r.id===docId);if(!doc)return;const de=new Date().toLocaleDateString('pt-BR');let novoStatus='entregue';if(tipoEntrega==='individual'){const itensEntregues=EPI_ITEMS.filter(it=>{const chk=document.getElementById('entg_'+it.k);return chk&&chk.checked;}).map(it=>it.k);if(itensEntregues.length===0){alert('Selecione pelo menos um item para entregar!');return;}doc.itensEntregues=itensEntregues;doc.dataEntregaParcial=de;novoStatus='entrega_parcial';}else{doc.status='entregue';doc.dataEntrega=de;}if(_epiCache.docs){const idx=_epiCache.docs.findIndex(r=>r.id===docId);if(idx>=0)_epiCache.docs[idx]=doc;}renderEpiTableFromCache();document.getElementById('modalEntregaEpi').style.display='none';try{const updateData={status:novoStatus,dataEntrega:de};if(tipoEntrega==='individual'){updateData.itensEntregues=doc.itensEntregues;updateData.dataEntregaParcial=de;}await dbCloud.collection('logistica_epi_registros').doc(docId).update(updateData);}catch(e){alert('Erro:'+e.message);_epiCache.docs=null;renderEpiTable(true);}};window.fecharModalEntregaEpi=function(){document.getElementById('modalEntregaEpi').style.display='none';};;
+window.confirmarEntregaEpi=async function(docId){if(!confirm('Confirmar entrega fisica?'))return;const de=new Date().toLocaleDateString('pt-BR');if(_epiCache.docs){const r=_epiCache.docs.find(r=>r.id===docId);if(r){r.status='entregue';r.dataEntrega=de;}}renderEpiTableFromCache();try{await dbCloud.collection('logistica_epi_registros').doc(docId).update({status:'entregue',dataEntrega:de});}catch(e){alert('Erro:'+e.message);_epiCache.docs=null;renderEpiTable(true);}};
 window.renderEpiTable=async function(forceRefresh){if(!forceRefresh&&_epiCache.docs&&(Date.now()-_epiCache.ts)<_epiCache.TTL){renderEpiTableFromCache();return;}const tb=document.getElementById('tbEpi');if(!tb)return;tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:12px;color:#999;"><i class="fas fa-circle-notch fa-spin"></i> Carregando...</td></tr>';try{const snap=await dbCloud.collection('logistica_epi_registros').get();const docs=[];snap.forEach(d=>docs.push({id:d.id,...d.data()}));docs.sort((a,b)=>(b.dataAprovTs||0)-(a.dataAprovTs||0));_epiCache.docs=docs;_epiCache.ts=Date.now();}catch(e){if(!_epiCache.docs){tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:20px;color:#e74c3c;">Erro ao carregar.</td></tr>';return;}}renderEpiTableFromCache();};
-window.renderEpiTableFromCache=function(){const tb=document.getElementById('tbEpi');if(!tb)return;const docs=_epiCache.docs||[];const fSel=document.getElementById('epiFilterStatus');const f=fSel?fSel.value:'all';const filtered=f==='all'?docs:(f==='entregue'?docs.filter(r=>r.status==='entregue'):docs.filter(r=>r.status!=='entregue'));const cnt=document.getElementById('epiRegCount');if(cnt)cnt.textContent=docs.length;const ecnt=document.getElementById('epiEntregCount');if(ecnt){const ent=docs.filter(r=>r.status==='entregue').length;const parc=docs.filter(r=>r.status==='entrega_parcial').length;ecnt.textContent=ent+' entregues'+(parc>0?', '+parc+' parciais':'');}if(!filtered.length){tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:20px;color:#999;">Nenhum registro.</td></tr>';return;}const sz=v=>(!v||v==='-')?'<span style="color:#ccc;">-</span>':`<span style="background:#e8daef;color:#6c3483;padding:2px 7px;border-radius:4px;font-weight:700;font-size:10px;">${v}</span>`;tb.innerHTML=filtered.map(x=>{const ok=x.status==='entregue';const badge=ok?`<span class="epi-badge-entg"><i class="fas fa-check-double"></i> Entregue ${x.dataEntrega||''}</span>`:(x.status==='entrega_parcial'?`<span class="epi-badge-pend" style="background:#fff3cd;color:#856404;"><i class="fas fa-box"></i> Entrega Parcial ${x.dataEntregaParcial||''}</span>`:`<span class="epi-badge-pend"><i class="fas fa-box"></i> Aguard. Entrega</span>`);const act=ok?`<button onclick="excluirEpiReg('${x.id}')" style="background:#e74c3c;color:white;border:none;border-radius:4px;padding:3px 8px;font-size:10px;font-weight:700;cursor:pointer;"><i class="fas fa-trash"></i></button>`:`<button onclick="abrirModalEntregaEpi('${x.id}')" style="background:#27ae60;color:white;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;"><i class="fas fa-box-open"></i> Entregar</button> <button onclick="excluirEpiReg('${x.id}')" style="background:#e74c3c;color:white;border:none;border-radius:4px;padding:5px 8px;font-size:10px;font-weight:700;cursor:pointer;margin-left:4px;"><i class="fas fa-trash"></i></button>`;return `<tr class="${ok?'epi-reg-row-entg':''}"><td style="text-align:left;font-weight:700;white-space:nowrap;">${x.nome}</td><td style="text-align:left;color:#777;font-size:10px;">${x.mat}</td><td>${sz(x.blusa)}</td><td>${sz(x.calca)}</td><td>${sz(x.bermuda)}</td><td>${sz(x.casaco)}</td><td>${sz(x.bota)}</td><td>${sz(x.luva)}</td><td>${sz(x.cinta)}</td><td style="color:#777;font-size:10px;white-space:nowrap;">${x.dataAprov||''}</td><td>${badge}</td><td style="white-space:nowrap;">${act}</td></tr>`;}).join('');};
+window.renderEpiTableFromCache=function(){const tb=document.getElementById('tbEpi');if(!tb)return;const docs=_epiCache.docs||[];const fSel=document.getElementById('epiFilterStatus');const f=fSel?fSel.value:'all';const filtered=f==='all'?docs:docs.filter(r=>r.status===f);const cnt=document.getElementById('epiRegCount');if(cnt)cnt.textContent=docs.length;const ecnt=document.getElementById('epiEntregCount');if(ecnt)ecnt.textContent=docs.filter(r=>r.status==='entregue').length+' entregues';if(!filtered.length){tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:20px;color:#999;">Nenhum registro.</td></tr>';return;}const sz=v=>(!v||v==='-')?'<span style="color:#ccc;">-</span>':`<span style="background:#e8daef;color:#6c3483;padding:2px 7px;border-radius:4px;font-weight:700;font-size:10px;">${v}</span>`;tb.innerHTML=filtered.map(x=>{const ok=x.status==='entregue';const isParcial=x.status==='parcial';const badge=ok?`<span class="epi-badge-entg"><i class="fas fa-check-double"></i> Entregue ${x.dataEntrega||''}</span>`:isParcial?`<span style="background:#d6eaf8;color:#1a5276;padding:3px 9px;border-radius:10px;font-size:10px;font-weight:800;white-space:nowrap;"><i class="fas fa-box-open"></i> Parcial ${x.dataEntrega||''}</span>`:`<span class="epi-badge-pend"><i class="fas fa-box"></i> Aguard. Entrega</span>`;const act=ok?`<button onclick="excluirEpiReg('${x.id}')" style="background:#e74c3c;color:white;border:none;border-radius:4px;padding:3px 8px;font-size:10px;font-weight:700;cursor:pointer;"><i class="fas fa-trash"></i></button>`:`<button onclick="abrirModalEntregaEpi('${x.id}')" style="background:#27ae60;color:white;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;"><i class="fas fa-box-open"></i> Entregar</button> <button onclick="excluirEpiReg('${x.id}')" style="background:#e74c3c;color:white;border:none;border-radius:4px;padding:5px 8px;font-size:10px;font-weight:700;cursor:pointer;margin-left:4px;"><i class="fas fa-trash"></i></button>`;return `<tr class="${ok?'epi-reg-row-entg':''}"><td style="text-align:left;font-weight:700;white-space:nowrap;">${x.nome}</td><td style="text-align:left;color:#777;font-size:10px;">${x.mat}</td><td>${sz(x.blusa)}</td><td>${sz(x.calca)}</td><td>${sz(x.bermuda)}</td><td>${sz(x.casaco)}</td><td>${sz(x.bota)}</td><td>${sz(x.luva)}</td><td>${sz(x.cinta)}</td><td style="color:#777;font-size:10px;white-space:nowrap;">${x.dataAprov||''}</td><td>${badge}</td><td style="white-space:nowrap;">${act}</td></tr>`;}).join('');};
 window.excluirEpiReg=async function(docId){if(!confirm('Excluir permanentemente?'))return;if(_epiCache.docs)_epiCache.docs=_epiCache.docs.filter(r=>r.id!==docId);renderEpiTableFromCache();try{await dbCloud.collection('logistica_epi_registros').doc(docId).delete();}catch(e){alert('Erro:'+e.message);_epiCache.docs=null;renderEpiTable(true);}};
 window.filterEpiTable=function(){const q=(document.getElementById('epiSearchInput').value||'').toLowerCase();document.querySelectorAll('#tbEpi tr').forEach(r=>{r.style.display=q===''||r.textContent.toLowerCase().includes(q)?'':'none';});};
 window.exportEpiExcel=async function(){try{let docs=_epiCache.docs;if(!docs){const snap=await dbCloud.collection('logistica_epi_registros').get();docs=[];snap.forEach(d=>docs.push(d.data()));docs.sort((a,b)=>(b.dataAprovTs||0)-(a.dataAprovTs||0));}if(!docs.length){alert('Sem registros.');return;}const rows=[['Colaborador','Matricula','Blusa','Calca','Bermuda','Casaco','Bota','Luva','Cinta','Data Aprovacao','Status','Data Entrega']];docs.forEach(x=>rows.push([x.nome,x.mat,x.blusa,x.calca,x.bermuda,x.casaco,x.bota,x.luva,x.cinta,x.dataAprov||'',x.status==='entregue'?'Entregue':'Aguardando',x.dataEntrega||'']));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Uniforme_EPI');XLSX.writeFile(wb,'Uniforme_EPI_'+new Date().toISOString().slice(0,10)+'.xlsx');}catch(e){alert('Erro:'+e.message);}};
@@ -1744,6 +1663,433 @@ window.renderDashboardRH=async function(){const btn=document.querySelector('[onc
 function renderChartAbsMensal(x){}
 function renderChartAbsMensal2(meses){const c=document.getElementById('chartAbsMensal');if(!c)return;if(window._dashCharts&&window._dashCharts.absMensal)window._dashCharts.absMensal.destroy();const sorted=Object.keys(meses).sort();if(!sorted.length)return;if(!window._dashCharts)window._dashCharts={};window._dashCharts.absMensal=new Chart(c.getContext('2d'),{type:'bar',data:{labels:sorted,datasets:[{label:'Dias',data:sorted.map(k=>meses[k]),backgroundColor:'#e74c3c99',borderColor:'#e74c3c',borderWidth:1}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{font:{size:10}}}}}});}
 function renderChartPontoTipo(tipos){const c=document.getElementById('chartPontoTipo');if(!c)return;if(window._dashCharts&&window._dashCharts.pontoTipo)window._dashCharts.pontoTipo.destroy();if(!tipos||!Object.keys(tipos).length)return;if(!window._dashCharts)window._dashCharts={};const labels=Object.keys(tipos);window._dashCharts.pontoTipo=new Chart(c.getContext('2d'),{type:'bar',data:{labels,datasets:[{label:'Ocorrencias',data:labels.map(k=>tipos[k]),backgroundColor:'#8e44ad99',borderColor:'#8e44ad',borderWidth:1}]},options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{font:{size:10}}}}}});}
+
+
+// ================================================================
+// METAS — Absenteísmo (<4%) + Ressuprimento (≥90%)
+// 70% da meta total do CD
+// Dados Abs: rhData[mat].faltas (aba Absenteísmo & Ponto)
+// Dados RSS: importação XLSX — consolidado por DIA
+// ================================================================
+
+var _metaChartAbs = null;
+var _metaChartRss = null;
+var _rssData = []; // [{data, pedido, atendido}] agrupado por dia
+
+window.initMetas = function() { calcularMetas(); };
+
+window.calcularMetas = async function() {
+    var hoje = new Date();
+    var ini  = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+    var fim  = new Date(hoje.getFullYear(), hoje.getMonth()+1, 0);
+    var fmt  = function(d){ return d.toLocaleDateString('pt-BR'); };
+    var lbl  = document.getElementById('meta-periodo-label');
+    if (lbl) lbl.textContent = 'Período: ' + fmt(ini) + ' a ' + fmt(fim);
+    await calcMetaAbsenteismo();
+    calcMetaRessuprimento();
+    atualizarScoreTotal();
+};
+
+// ═══════════════════════════════════════════════════════════════
+// META 1 — ABSENTEÍSMO
+// Fonte: rhData[mat].faltas (aba Absenteísmo & Ponto unificada)
+// ═══════════════════════════════════════════════════════════════
+async function calcMetaAbsenteismo() {
+    // Busca dados do Firebase (mesma fonte do Dashboard RH)
+    var dRHfb   = null;
+    var rhDataFb = null;
+    try {
+        var results = await Promise.all([
+            window.getFromDB('dRH').catch(function(){ return null; }),
+            window.getFromDB('rhData').catch(function(){ return null; })
+        ]);
+        dRHfb   = results[0];
+        rhDataFb = results[1];
+    } catch(e) {}
+
+    var listaRH = (dRHfb && dRHfb.length) ? dRHfb : (window.dRH || []);
+    var rh      = (rhDataFb && Object.keys(rhDataFb).length) ? rhDataFb : (window.rhData || {});
+
+    if (!listaRH.length) {
+        var el = document.getElementById('abs-ia-text');
+        if (el) el.textContent = '⚠️ Nenhum colaborador encontrado. Importe o quadro de colaboradores primeiro.';
+        return;
+    }
+
+    var hoje   = new Date(); hoje.setHours(0,0,0,0);
+    var ano    = hoje.getFullYear();
+    var mes    = hoje.getMonth();
+    var anoMes = ano + '-' + String(mes+1).padStart(2,'0');
+
+    // Quadro ativo (apenas ATIVO real)
+    var quadroAtivo = Math.max(1, listaRH.filter(function(c) {
+        var mat = c['Matrícula']||c['Matricula']||c['MATRICULA']||'';
+        var s   = (c['Status']||c['STATUS']||'ATIVO').toUpperCase();
+        var rhM = (rh[mat]||{});
+        var sf  = (rhM.statusManual && rhM.statusManual !== 'AUTO') ? rhM.statusManual.toUpperCase() : s;
+        return sf === 'ATIVO';
+    }).length);
+
+    // Dias úteis decorridos e total do mês
+    var diasUteisAte = 0;
+    var diasUteisMes = 0;
+    var diaAtual  = hoje.getDate();
+    var ultimoDia = new Date(ano, mes+1, 0).getDate();
+    for (var d = 1; d <= ultimoDia; d++) {
+        var dow = new Date(ano, mes, d).getDay();
+        if (dow === 0 || dow === 6) continue;
+        diasUteisMes++;
+        if (d <= diaAtual) diasUteisAte++;
+    }
+
+    // Coleta faltas do mês (exclui Folga)
+    var diasAusentes = 0;
+    var impactMap    = {};
+    var diasPorDia   = {};
+
+    Object.keys(rh).forEach(function(mat) {
+        var faltas = (rh[mat]||{}).faltas || [];
+        var emp    = listaRH.find(function(c){ return (c['Matrícula']||c['Matricula']||c['MATRICULA']||'') === mat; });
+        var nome   = emp ? (emp['Nome']||emp['NOME']||mat) : mat;
+
+        faltas.forEach(function(f) {
+            if ((f.motivo||'').toLowerCase().includes('folga')) return;
+            var dt = f.data || '';
+            var fAnoMes = '';
+            var dia = '';
+            if (dt.includes('/')) {
+                var p = dt.split('/');
+                fAnoMes = p[2] + '-' + p[1].padStart(2,'0');
+                dia     = p[0].padStart(2,'0');
+            } else if (dt.includes('-')) {
+                fAnoMes = dt.substring(0,7);
+                dia     = dt.substring(8,10);
+            }
+            if (fAnoMes !== anoMes) return;
+            var dias = parseInt(f.dias) || 1;
+            diasAusentes += dias;
+            diasPorDia[dia] = (diasPorDia[dia]||0) + dias;
+            if (!impactMap[mat]) impactMap[mat] = { nome: nome, dias: 0 };
+            impactMap[mat].dias += dias;
+        });
+    });
+
+    var taxa    = diasUteisAte > 0 ? (diasAusentes / (quadroAtivo * diasUteisAte)) * 100 : 0;
+    var maxDias = 0.04 * quadroAtivo * diasUteisMes;
+    var saldo   = Math.floor(maxDias - diasAusentes);
+    var barW    = Math.min((taxa / 8) * 100, 100);
+    var barCol  = taxa <= 2 ? '#27ae60' : taxa <= 4 ? '#f39c12' : '#e74c3c';
+    var atingiu = taxa <= 4;
+
+    var set  = function(id,v){ var el=document.getElementById(id); if(el) el.textContent=v; };
+    var setH = function(id,v){ var el=document.getElementById(id); if(el) el.innerHTML=v; };
+    var setSt = function(id,p,v){ var el=document.getElementById(id); if(el) el.style[p]=v; };
+
+    set('abs-kpi-taxa',  taxa.toFixed(2)+'%');
+    set('abs-kpi-dias',  diasAusentes);
+    set('abs-kpi-total', quadroAtivo);
+    set('abs-kpi-uteis', diasUteisMes);
+    set('abs-kpi-tol',   Math.floor(maxDias));
+    set('abs-kpi-saldo', (saldo>=0?'+':'')+saldo);
+    setSt('abs-kpi-saldo','color', saldo>=0?'#27ae60':'#e74c3c');
+    setSt('abs-gauge-fill','width', barW+'%');
+    setSt('abs-gauge-fill','background', barCol);
+    set('abs-gauge-pct', taxa.toFixed(2)+'%');
+    setSt('abs-gauge-pct','color', barCol);
+    set('meta-res-abs-pct', atingiu ? '✅ OK' : '⚠️ '+taxa.toFixed(1)+'%');
+
+    var badge = document.getElementById('abs-meta-badge');
+    if (badge) {
+        badge.textContent = atingiu
+            ? '✅ META ATINGIDA ('+taxa.toFixed(2)+'%)'
+            : '⚠️ ACIMA DA META ('+taxa.toFixed(2)+'%)';
+        badge.style.background = atingiu ? 'rgba(39,174,96,.25)' : 'rgba(231,76,60,.25)';
+    }
+
+    // Lista de impacto
+    var arr    = Object.values(impactMap).sort(function(a,b){ return b.dias-a.dias; });
+    var listEl = document.getElementById('abs-impact-list');
+    if (listEl) {
+        listEl.innerHTML = arr.length ? arr.slice(0,15).map(function(x){
+            var contrib = diasUteisAte>0 ? ((x.dias/(quadroAtivo*diasUteisAte))*100).toFixed(2) : '0.00';
+            return '<div class="meta-impact-item">' +
+                '<span class="meta-impact-name">'+x.nome+'</span>' +
+                '<span style="display:flex;gap:8px;align-items:center;">' +
+                '<span class="meta-impact-dias">'+x.dias+' dias</span>' +
+                '<span style="font-size:10px;color:#e74c3c;font-weight:700;">+'+contrib+'%</span>' +
+                '</span></div>';
+        }).join('') : '<div style="padding:16px;text-align:center;color:#999;font-size:12px;">Nenhuma ausência no mês.</div>';
+    }
+
+    // IA
+    var ia = '';
+    if (taxa === 0) {
+        ia = '✅ <strong>Perfeito!</strong> Nenhuma ausência registada no mês atual.';
+    } else if (taxa <= 2) {
+        ia = '✅ Índice <strong>'+taxa.toFixed(2)+'%</strong> — excelente. Saldo de <strong>'+saldo+'</strong> dias disponíveis.';
+    } else if (taxa <= 4) {
+        ia = '⚡ Índice <strong>'+taxa.toFixed(2)+'%</strong> — atenção, saldo restante: <strong>'+saldo+' dias</strong>.<br>'+
+             '• Conversar com colaboradores de maior impacto<br>• Monitorar presença diariamente';
+    } else {
+        var rest = diasUteisMes - diasUteisAte;
+        ia = '🚨 <strong>META EM RISCO!</strong> Índice: <strong>'+taxa.toFixed(2)+'%</strong> (meta: 4%).<br>'+
+             '• Acionar gestores imediatamente<br>• Solicitar documentação das ausências<br>'+
+             '• Não aprovar folgas até fim do mês';
+        if (rest > 0 && (maxDias - diasAusentes) > 0) {
+            var txMax = ((maxDias-diasAusentes)/(quadroAtivo*rest)*100).toFixed(2);
+            ia += '<br>• Taxa máxima permitida nos <strong>'+rest+' dias úteis restantes</strong>: <strong>'+txMax+'%</strong>';
+        }
+    }
+    setH('abs-ia-text', ia);
+
+    // Gráfico
+    renderChartAbsMeta(diasPorDia, quadroAtivo, ano, mes, diasUteisMes);
+}
+
+function renderChartAbsMeta(diasPorDia, quadro, ano, mes, diasUteisMes) {
+    var canvas = document.getElementById('chartAbsMeta');
+    if (!canvas) return;
+    if (_metaChartAbs) { _metaChartAbs.destroy(); _metaChartAbs = null; }
+    var labels=[], taxaLine=[], metaLine=[];
+    var ultimo = new Date(ano, mes+1, 0).getDate();
+    var acum = 0, uteis = 0;
+    for (var d=1; d<=ultimo; d++) {
+        var dow = new Date(ano,mes,d).getDay();
+        if (dow===0||dow===6) continue;
+        uteis++;
+        acum += (diasPorDia[String(d).padStart(2,'0')]||0);
+        var taxa = uteis>0 ? (acum/(quadro*uteis))*100 : 0;
+        labels.push(d+'/'+(mes+1));
+        taxaLine.push(parseFloat(taxa.toFixed(2)));
+        metaLine.push(4);
+    }
+    _metaChartAbs = new Chart(canvas.getContext('2d'), {
+        type: 'line',
+        data: { labels: labels, datasets: [
+            { label: 'Absenteísmo (%)', data: taxaLine, borderColor:'#e74c3c', backgroundColor:'rgba(231,76,60,.08)', fill:true, tension:0.35, pointRadius:3 },
+            { label: 'Meta (4%)',       data: metaLine, borderColor:'#27ae60', borderDash:[6,3], fill:false, pointRadius:0 }
+        ]},
+        options: { responsive:true, plugins:{legend:{position:'top',labels:{font:{size:10}}}},
+            scales:{ y:{beginAtZero:true,suggestedMax:8,ticks:{callback:function(v){return v+'%';},font:{size:10}}}, x:{ticks:{font:{size:9},maxTicksLimit:16}} } }
+    });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// META 2 — RESSUPRIMENTO por DIA
+// Arquivo XLSX: colunas Data, Pedido, Atendido (por dia)
+// ═══════════════════════════════════════════════════════════════
+window.importarRessuprimento = async function(input) {
+    var file = input.files[0]; if (!file) return;
+    try {
+        var rows = await new Promise(function(resolve,reject){
+            var r=new FileReader();
+            r.onload=function(e){try{var wb=XLSX.read(e.target.result,{type:'binary',cellDates:true});resolve(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''}));}catch(err){reject(err);}};
+            r.onerror=reject; r.readAsBinaryString(file);
+        });
+        _rssData = processarRssPorDia(rows);
+        try { await window.saveToDB('meta_rss_dias', _rssData); } catch(e) {}
+        calcMetaRessuprimento();
+        atualizarScoreTotal();
+    } catch(e) { alert('Erro: '+e.message); }
+    input.value='';
+};
+
+function processarRssPorDia(rows) {
+    // Colunas do arquivo ressuprimento_mensal.xlsx:
+    // Mapa | Movimento (data) | Romaneio | Endereço | Produto | Descrição
+    // Qtde Pedida | Qtde Pedida CX | Qtde Atendida | Qtde Atendida CX
+    // Qtde N Atendida | Qtde Resolução Div. | Saldo Pendente | ...
+    var mapaData = {};
+
+    rows.forEach(function(r) {
+        // Detecta coluna de data (Movimento)
+        var dt = null;
+        var keys = Object.keys(r);
+        for (var i=0; i<keys.length; i++) {
+            var kl = keys[i].toLowerCase().replace(/\s/g,'');
+            if (kl === 'movimento' || kl === 'data' || kl === 'date' || kl === 'dia') {
+                var v = r[keys[i]];
+                if (v) { dt = v; break; }
+            }
+        }
+        if (!dt) return;
+
+        // Normaliza data para yyyy-mm-dd
+        var dStr = '';
+        if (dt instanceof Date || (typeof dt === 'object' && dt.getFullYear)) {
+            dStr = dt.getFullYear() + '-' +
+                   String(dt.getMonth()+1).padStart(2,'0') + '-' +
+                   String(dt.getDate()).padStart(2,'0');
+        } else {
+            var s = String(dt).trim();
+            if (s.includes('/')) {
+                var p = s.split('/');
+                // dd/mm/yyyy or mm/dd/yyyy — assume dd/mm/yyyy
+                if (p.length === 3) {
+                    var y = p[2].length === 4 ? p[2] : '20'+p[2];
+                    dStr = y + '-' + p[1].padStart(2,'0') + '-' + p[0].padStart(2,'0');
+                }
+            } else if (s.includes('-') && s.length >= 8) {
+                dStr = s.substring(0,10);
+            } else if (!isNaN(Number(s)) && Number(s) > 40000) {
+                // Excel serial date
+                var d = new Date((Number(s) - 25569) * 86400 * 1000);
+                dStr = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+            }
+        }
+        if (!dStr || dStr.length < 8) return;
+
+        // Detecta colunas de pedido e atendido
+        var pedido   = 0;
+        var atendido = 0;
+        keys.forEach(function(k) {
+            var kl = k.toLowerCase().replace(/[\s\.]/g,'');
+            var v  = parseFloat(r[k]) || 0;
+            // Qtde Pedida (sem CX, sem Caixa)
+            if (!pedido && (kl === 'qtdepedida' || kl === 'qtdpedida' || kl === 'quantidadepedida') &&
+                !kl.includes('cx') && !kl.includes('caixa')) {
+                pedido = v;
+            }
+            // Qtde Atendida (sem CX, sem Caixa)
+            if (!atendido && (kl === 'qtdeatendida' || kl === 'qtdatendida' || kl === 'quantidadeatendida') &&
+                !kl.includes('cx') && !kl.includes('caixa')) {
+                atendido = v;
+            }
+        });
+
+        if (pedido === 0) return; // linha sem pedido — pula
+
+        if (!mapaData[dStr]) mapaData[dStr] = { data: dStr, pedido: 0, atendido: 0 };
+        mapaData[dStr].pedido   += pedido;
+        mapaData[dStr].atendido += atendido;
+    });
+
+    var result = Object.values(mapaData).sort(function(a,b){ return a.data.localeCompare(b.data); });
+    return result;
+}
+
+function calcMetaRessuprimento() {
+    if (!_rssData.length) {
+        window.getFromDB('meta_rss_dias').then(function(s){ if(s&&s.length){_rssData=s;calcMetaRessuprimento();} }).catch(function(){});
+        return;
+    }
+    var totPed = _rssData.reduce(function(a,r){return a+r.pedido;},0);
+    var totAte = _rssData.reduce(function(a,r){return a+r.atendido;},0);
+    var totPend= totPed - totAte;
+    var pct    = totPed>0 ? (totAte/totPed)*100 : 0;
+    var atingiu= pct>=90;
+    var gap    = Math.max(0,90-pct).toFixed(1);
+    var fmtN   = function(n){ return Math.round(n).toLocaleString('pt-BR'); };
+
+    var set  = function(id,v){var el=document.getElementById(id);if(el)el.textContent=v;};
+    var setH = function(id,v){var el=document.getElementById(id);if(el)el.innerHTML=v;};
+    var setSt= function(id,p,v){var el=document.getElementById(id);if(el)el.style[p]=v;};
+
+    set('rss-kpi-pct',  pct.toFixed(2)+'%');
+    set('rss-kpi-ped',  fmtN(totPed));
+    set('rss-kpi-ate',  fmtN(totAte));
+    set('rss-kpi-pend', fmtN(totPend));
+    set('rss-kpi-dias', _rssData.length+' dias');
+    set('rss-kpi-gap',  atingiu?'0% ✅':gap+'%');
+    setSt('rss-kpi-pct','color', atingiu?'#27ae60':'#e74c3c');
+    setSt('rss-gauge-fill','width', Math.min(pct,100)+'%');
+    setSt('rss-gauge-fill','background', pct>=90?'#27ae60':pct>=75?'#f39c12':'#e74c3c');
+    set('rss-gauge-pct', pct.toFixed(2)+'%');
+    setSt('rss-gauge-pct','color', atingiu?'#27ae60':'#e74c3c');
+    set('meta-res-rss-pct', atingiu?'✅ OK':'⚠️ '+pct.toFixed(1)+'%');
+
+    var badge=document.getElementById('rss-meta-badge');
+    if(badge){badge.textContent=atingiu?'✅ META ATINGIDA ('+pct.toFixed(2)+'%)':'⚠️ ABAIXO DA META ('+pct.toFixed(2)+'%)';badge.style.background=atingiu?'rgba(39,174,96,.25)':'rgba(231,76,60,.25)';}
+
+    // Tabela por dia
+    var tbody = document.getElementById('rss-tbody');
+    if (tbody) {
+        tbody.innerHTML = _rssData.map(function(r) {
+            var p   = r.pedido>0 ? (r.atendido/r.pedido)*100 : 0;
+            var cor = p>=90?'#27ae60':p>=75?'#f39c12':'#e74c3c';
+            var bg  = p>=90?'#f0fff4':p>=75?'#fffdf0':'#fff5f5';
+            var dtFmt = r.data.split('-').reverse().join('/');
+            return '<tr style="background:'+bg+';">' +
+                '<td style="padding:6px 12px;font-weight:700;">'+dtFmt+'</td>' +
+                '<td style="text-align:center;padding:6px 12px;">'+fmtN(r.pedido)+'</td>' +
+                '<td style="text-align:center;padding:6px 12px;">'+fmtN(r.atendido)+'</td>' +
+                '<td style="text-align:center;padding:6px 12px;font-weight:900;color:'+cor+';">'+p.toFixed(1)+'%</td>' +
+                '<td style="text-align:center;padding:6px 12px;color:#e74c3c;font-weight:700;">'+fmtN(r.pedido-r.atendido)+'</td>' +
+                '<td style="text-align:center;padding:6px 12px;">' +
+                    (p>=90?'<span style="background:#d5f5e3;color:#1a7a3c;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:800;">✅ OK</span>' :
+                           '<span style="background:#fadbd8;color:#c0392b;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:800;">⚠️ Abaixo</span>') +
+                '</td></tr>';
+        }).join('');
+    }
+
+    // Gráfico % por dia
+    renderChartRssDia();
+
+    // IA
+    var diasAbaixo = _rssData.filter(function(r){ return r.pedido>0 && (r.atendido/r.pedido)*100 < 90; }).length;
+    var ia = '';
+    if (atingiu) {
+        ia = '✅ <strong>Meta atingida!</strong> Atendimento geral: <strong>'+pct.toFixed(2)+'%</strong>. '+diasAbaixo+' dia(s) abaixo de 90%. Continue monitorando.';
+    } else {
+        var unidNec = Math.ceil(0.90*totPed - totAte);
+        ia = '⚠️ Atendimento <strong>'+pct.toFixed(2)+'%</strong> — abaixo de 90%. Faltam <strong>'+fmtN(unidNec)+' unidades</strong>.<br>' +
+             '• <strong>'+diasAbaixo+'</strong> dia(s) com atendimento abaixo da meta<br>' +
+             '• Verificar os dias críticos na tabela abaixo<br>' +
+             '• Priorizar picking nos horários de maior volume<br>' +
+             '• Comunicar ao time de compras os dias com maior pendência';
+    }
+    setH('rss-ia-text', ia);
+}
+
+function renderChartRssDia() {
+    var canvas = document.getElementById('chartRssMeta');
+    if (!canvas) return;
+    if (_metaChartRss) { _metaChartRss.destroy(); _metaChartRss = null; }
+    if (!_rssData.length) return;
+    var labels = _rssData.map(function(r){ return r.data.split('-').slice(1).reverse().join('/'); });
+    var pcts   = _rssData.map(function(r){ return r.pedido>0 ? parseFloat(((r.atendido/r.pedido)*100).toFixed(1)) : 0; });
+    var colors = pcts.map(function(v){ return v>=90?'rgba(39,174,96,.7)':v>=75?'rgba(243,156,18,.7)':'rgba(231,76,60,.7)'; });
+    _metaChartRss = new Chart(canvas.getContext('2d'), {
+        type: 'bar',
+        data: { labels: labels, datasets: [
+            { label: '% Atendido por Dia', data: pcts, backgroundColor: colors },
+            { label: 'Meta (90%)', data: Array(labels.length).fill(90), type:'line', borderColor:'#e74c3c', borderDash:[5,3], fill:false, pointRadius:0, borderWidth:2 }
+        ]},
+        options: { responsive:true, plugins:{legend:{position:'top',labels:{font:{size:10}}}},
+            scales:{ y:{beginAtZero:true,max:100,ticks:{callback:function(v){return v+'%';},font:{size:10}}}, x:{ticks:{font:{size:9},maxTicksLimit:18}} } }
+    });
+}
+
+function atualizarScoreTotal() {
+    var el = document.getElementById('meta-score-total');
+    if (!el) return;
+    var absEl = document.getElementById('abs-kpi-taxa');
+    var rssEl = document.getElementById('rss-kpi-pct');
+    var absOk = absEl && parseFloat(absEl.textContent) <= 4;
+    var rssOk = rssEl && parseFloat(rssEl.textContent) >= 90;
+    var score = (absOk?35:0) + (rssOk?35:0);
+    el.textContent = score+'%';
+    el.style.color = score>=70?'#2ecc71':score>=35?'#f1c40f':'#e74c3c';
+}
+
+
+window.subTabAbs = function(aba) {
+    var pAbs   = document.getElementById('sub-painel-abs');
+    var pPonto = document.getElementById('sub-painel-ponto');
+    var bAbs   = document.getElementById('btn-sub-abs');
+    var bPonto = document.getElementById('btn-sub-ponto');
+    if (!pAbs || !pPonto) return;
+    if (aba === 'abs') {
+        pAbs.style.display=''; pPonto.style.display='none';
+        if(bAbs){bAbs.style.background='var(--red)';bAbs.style.color='white';}
+        if(bPonto){bPonto.style.background='#e9ecef';bPonto.style.color='#555';}
+    } else {
+        pAbs.style.display='none'; pPonto.style.display='';
+        if(bPonto){bPonto.style.background='var(--purple)';bPonto.style.color='white';}
+        if(bAbs){bAbs.style.background='#e9ecef';bAbs.style.color='#555';}
+        if(window.renderPontoMensal) renderPontoMensal();
+    }
+};
 
 window.updatePublicFormFields = function() { const sel = document.getElementById('pf_colab_select'); if(!sel.value) return; document.getElementById('pf_mat').value = sel.value; document.getElementById('pf_nome').value = sel.options[sel.selectedIndex].text; };
 async function submitPublicForm() { const nome = document.getElementById('pf_nome').value; const mat = document.getElementById('pf_mat').value; const inicio = document.getElementById('pf_inicio').value; const fim = document.getElementById('pf_fim').value; const vendeuRadio = document.querySelector('input[name="pf_vender"]:checked'); const vendeu = vendeuRadio ? vendeuRadio.value : 'nao'; if(!mat||!nome) return alert("Selecione o seu nome!"); if(!inicio||!fim) return alert("Preencha Início e Retorno!"); const payload = { matricula:mat, nome:nome, dataInicio:inicio, dataRetorno:fim, vendeuDias:vendeu==='sim', timestamp:new Date().getTime(), status:'PENDENTE' }; try { const btn = document.querySelector('.pf-btn'); btn.innerText='A ENVIAR...'; btn.disabled=true; await dbCloud.collection('logistica_ferias_inbox').add(payload);
@@ -1896,7 +2242,6 @@ async function submitPublicForm() { const nome = document.getElementById('pf_nom
         document.getElementById('txtPontoObs').value = '';
         alert("Ocorrência de ponto registada com sucesso!");
         carregarTabelaPontoMes();
-        renderPontoAbsConsolidado();
     };
 
     window.removerPonto = async function(mat, idStr) {
@@ -1905,7 +2250,6 @@ async function submitPublicForm() { const nome = document.getElementById('pf_nom
             rhData[mat].ponto = rhData[mat].ponto.filter(p => p.id !== idStr);
             if (window.saveToDB) await window.saveToDB('rhData', rhData);
             carregarTabelaPontoMes();
-            renderPontoAbsConsolidado();
         }
     };
 
@@ -2055,68 +2399,76 @@ window.addEventListener('load', function() {
 });
 
 // ==========================================
-// FUNÇÃO GLOBAL DE INDICADORES (CORREÇÃO DA BASE DE DADOS: dRH)
+// FUNÇÃO GLOBAL DE INDICADORES (DETETIVE 3.0)
 // ==========================================
 function atualizarTodosIndicadores() {
-    // O GRANDE SEGREDO: Usar a base dRH (Recursos Humanos) e não dC (Logística)
-    if (typeof dRH === 'undefined' || !dRH || dRH.length === 0) return;
+    if (typeof dC === 'undefined' || !dC) return;
 
-    // Filtra rigorosamente apenas os ATIVOS
-    let dRHAtivos = dRH.filter(c => c.status && c.status.trim().toLowerCase() === 'ativo');
+    // Faz as contas rigorosas (Exatamente como a IA viu)
+    let dCAtivos = dC.filter(c => c.status && c.status.trim().toLowerCase() === 'ativo');
     
-    let totalGeral = dRH.length;
-    let totalAtivos = dRHAtivos.length;
-    let totalFerias = dRH.filter(c => c.status && c.status.trim().toLowerCase() === 'férias').length;
+    let totalGeral = dC.length;
+    let totalAtivos = dCAtivos.length;
+    let totalFerias = dC.filter(c => c.status === 'Férias').length;
+    let totalEPIs = (typeof dE !== 'undefined' && dE) ? dE.filter(e => e.status === 'Pendente' || e.status === 'Solicitado').length : 0;
     
-    // Conta os cargos apenas para os ativos
-    let contaSupervisores = dRHAtivos.filter(c => (c.cargo || c.funcao || "").toLowerCase().includes('supervisor')).length;
-    let contaLideres = dRHAtivos.filter(c => { let f = (c.cargo || c.funcao || "").toLowerCase(); return f.includes('lider') || f.includes('líder'); }).length;
-    let contaOperadores = dRHAtivos.filter(c => (c.cargo || c.funcao || "").toLowerCase().includes('operador')).length;
+    let contaSupervisores = dCAtivos.filter(c => (c.funcao || c.cargo || "").toLowerCase().includes('supervisor')).length;
+    let contaLideres = dCAtivos.filter(c => { let f = (c.funcao || c.cargo || "").toLowerCase(); return f.includes('lider') || f.includes('líder'); }).length;
+    let contaOperadores = dCAtivos.filter(c => (c.funcao || c.cargo || "").toLowerCase().includes('operador')).length;
 
-    // Detetive 4.0: Procura os títulos e injeta os números
+    // Detetive 3.0: Procura em todas as tags do sistema
     let todosElementos = document.querySelectorAll('div, span, h3, h4, th, td, p');
     todosElementos.forEach(el => {
         let texto = el.innerText.trim().toLowerCase();
         let valorInjetar = null;
 
+        // Associa a palavra exata ao número calculado
         if (texto === 'total colaboradores' || texto === 'total de colaboradores') valorInjetar = totalGeral;
         else if (texto === 'em férias' || texto === 'em ferias') valorInjetar = totalFerias;
+        else if (texto === 'pendências epi' || texto === 'pendencias epi') valorInjetar = totalEPIs;
         else if (texto === 'supervisores' || texto === 'supervisor') valorInjetar = contaSupervisores;
         else if (texto === 'líderes' || texto === 'lideres') valorInjetar = contaLideres;
         else if (texto === 'operadores' || texto === 'operador') valorInjetar = contaOperadores;
+        // Se for o card "Total" do quadro interno
         else if (texto === 'total' && el.parentElement && !el.parentElement.innerText.toLowerCase().includes('colaboradores')) valorInjetar = totalAtivos;
 
+        // Se encontrou onde injetar, procura a caixa do número logo abaixo ou ao lado
         if (valorInjetar !== null) {
             let caixaValor = el.nextElementSibling;
+            
+            // Se o próximo não for o número, procura dentro do "pai" do elemento
             if (!caixaValor || (caixaValor.innerText.trim() !== '0' && isNaN(parseInt(caixaValor.innerText)))) {
-                caixaValor = el.parentElement.querySelector('.kpi-val, [style*="font-size: 28px"], [style*="font-size:28px"], [id*="total"]');
+                caixaValor = el.parentElement.querySelector('.kpi-val, [style*="font-size: 28px"], [style*="font-size:28px"]');
             }
-            if (caixaValor) caixaValor.innerText = valorInjetar;
+            
+            if (caixaValor) {
+                caixaValor.innerText = valorInjetar;
+            }
         }
     });
 }
 
 // ==========================================
-// FORÇA A ATUALIZAÇÃO SEMPRE QUE O RH FOR MODIFICADO
+// ATUALIZAÇÃO DA FUNÇÃO runCalc FINAL
 // ==========================================
-const runCalcOriginal_novo = window.runCalc;
+const runCalcOriginal = window.runCalc;
 window.runCalc = function() {
     try {
-        if (typeof runCalcOriginal_novo === 'function') runCalcOriginal_novo();
+        if (typeof runCalcOriginal === 'function') {
+            runCalcOriginal();
+        }
+        // Sobrevivência (Memória do PC)
+        if (typeof dC !== 'undefined' && typeof dE !== 'undefined') {
+            localStorage.setItem('sysLog_mem_dC', JSON.stringify(dC));
+            localStorage.setItem('sysLog_mem_dE', JSON.stringify(dE));
+        }
+        // Chama o nosso novo atualizador completo
         atualizarTodosIndicadores();
-    } catch(err) { console.error(err); }
+        
+    } catch(err) {
+        console.error("Erro no runCalc:", err);
+    }
 }
-
-const atualizarRHOriginal = window.atualizarRHManual;
-window.atualizarRHManual = function() {
-    try {
-        if (typeof atualizarRHOriginal === 'function') atualizarRHOriginal();
-        atualizarTodosIndicadores();
-    } catch(err) { console.error(err); }
-}
-
-// Atualiza na hora que a página carrega
-setTimeout(atualizarTodosIndicadores, 1500);
 // =====================================================
 // 🔥 PATCH DEFINITIVO - DASHBOARD RH FUNCIONANDO 100%
 // =====================================================
@@ -2247,6 +2599,97 @@ window.atualizarRHManual = function() {
     } catch(e) {}
 };
 
+// ── Entrega por item individual ────────────────────────────────
+var _epiEntregDocId = null;
+var _epiEntregDoc   = null;
+
+window.abrirModalEntregaEpi = function(docId) {
+    var doc = (_epiCache.docs||[]).find(function(r){ return r.id === docId; });
+    if (!doc) return;
+    _epiEntregDocId = docId;
+    _epiEntregDoc   = doc;
+    var nEl = document.getElementById('modalEntregaNome');
+    if (nEl) nEl.innerHTML = '<i class="fas fa-user"></i> ' + doc.nome +
+        ' <span style="color:#888;font-weight:400;font-size:12px;">(' + doc.mat + ')</span>';
+    var iEl = document.getElementById('modalEntregaItens');
+    if (iEl) {
+        var h = '';
+        EPI_ITEMS.forEach(function(it) {
+            var val = doc[it.k];
+            if (!val || val === '-') return;
+            var jaEntregue = doc[it.k + '_entregue'] === true;
+            h += '<label style="display:flex;align-items:center;gap:10px;background:' +
+                 (jaEntregue ? '#f0fff4' : '#f9f9f9') + ';border:1px solid ' +
+                 (jaEntregue ? '#a9dfbf' : '#ddd') + ';border-radius:7px;padding:8px 12px;cursor:pointer;margin-bottom:6px;">' +
+                 '<input type="checkbox" id="entrega_chk_' + it.k + '" ' +
+                 (jaEntregue ? 'checked disabled' : 'checked') +
+                 ' style="accent-color:#27ae60;width:16px;height:16px;">' +
+                 '<i class="' + it.ico + '" style="color:' + (jaEntregue ? '#27ae60' : '#555') + ';font-size:15px;"></i>' +
+                 '<span style="font-weight:800;min-width:60px;">' + it.lbl + ':</span>' +
+                 '<span style="background:' + (jaEntregue ? '#27ae60' : '#8e44ad') + ';color:white;border-radius:5px;padding:2px 9px;font-size:12px;">' + val + '</span>' +
+                 (jaEntregue ? '<span style="margin-left:auto;font-size:10px;color:#27ae60;font-weight:700;"><i class="fas fa-check"></i> Já entregue</span>' :
+                               '<span style="margin-left:auto;font-size:10px;color:#f39c12;font-weight:700;">Pendente</span>') +
+                 '</label>';
+        });
+        iEl.innerHTML = h || '<p style="color:#999;font-size:13px;">Sem itens aprovados.</p>';
+    }
+    document.getElementById('modalEntregaEpi').style.display = 'flex';
+};
+
+window.entregarTudo = async function() {
+    if (!_epiEntregDocId) return;
+    document.getElementById('modalEntregaEpi').style.display = 'none';
+    await confirmarEntregaEpi(_epiEntregDocId);
+};
+
+window.confirmarEntregaParcial = async function() {
+    var docId = _epiEntregDocId;
+    var doc   = _epiEntregDoc;
+    if (!docId || !doc) return;
+    var marcados = {};
+    var temAlgum = false;
+    EPI_ITEMS.forEach(function(it) {
+        var chk = document.getElementById('entrega_chk_' + it.k);
+        if (chk && chk.checked && !chk.disabled && doc[it.k] && doc[it.k] !== '-') {
+            marcados[it.k] = true; temAlgum = true;
+        }
+    });
+    if (!temAlgum) { alert('Marque pelo menos um item para entregar.'); return; }
+
+    // Verifica se todos os pendentes foram marcados
+    var totalPendentes = EPI_ITEMS.filter(function(it){
+        return doc[it.k] && doc[it.k] !== '-' && !doc[it.k + '_entregue'];
+    }).length;
+    var totalMarcados = Object.keys(marcados).length;
+    var dataEntrega   = new Date().toLocaleDateString('pt-BR');
+    document.getElementById('modalEntregaEpi').style.display = 'none';
+
+    if (totalMarcados >= totalPendentes) {
+        // Todos os pendentes entregues → status entregue
+        await confirmarEntregaEpi(docId);
+    } else {
+        // Entrega parcial — atualiza cache otimisticamente
+        if (_epiCache.docs) {
+            var reg = _epiCache.docs.find(function(r){ return r.id === docId; });
+            if (reg) {
+                EPI_ITEMS.forEach(function(it){
+                    if (marcados[it.k]) reg[it.k + '_entregue'] = true;
+                });
+                reg.status      = 'parcial';
+                reg.dataEntrega = dataEntrega + ' (parcial)';
+            }
+        }
+        renderEpiTableFromCache();
+        // Salva no Firestore
+        try {
+            var upd = { dataEntrega: dataEntrega, status: 'parcial' };
+            EPI_ITEMS.forEach(function(it){ if (marcados[it.k]) upd[it.k + '_entregue'] = true; });
+            await dbCloud.collection('logistica_epi_registros').doc(docId).update(upd);
+        } catch(e) { alert('Erro ao salvar: ' + e.message); }
+    }
+};
+
+
 
 // =====================================================
 // 🔥 GARANTE EXECUÇÃO APÓS RESTORE SESSION
@@ -2265,147 +2708,3 @@ window.restoreSession = async function() {
         } catch(e) {}
     }, 500);
 };
-// ====================================================
-// PACOTE AUTOMÁTICO DE CORREÇÕES v2.0 (MÉTODO BLINDADO)
-// ====================================================
-
-// 1. Injeta o Quadro e Modal na tela
-setTimeout(() => {
-    let abaColab = document.getElementById('view-rh-colaboradores');
-    if (abaColab && !document.getElementById('quadro-info-display')) {
-        let quadroInfo = document.createElement('div');
-        quadroInfo.id = 'quadro-info-display';
-        quadroInfo.style.cssText = 'margin-bottom: 20px; font-size: 16px; background: #e8f8f5; padding: 15px; border-radius: 8px; border-left: 5px solid #117a65;';
-        abaColab.insertBefore(quadroInfo, abaColab.children[1] || abaColab.firstChild);
-    }
-
-    if (!document.getElementById('modalEntregaEpi')) {
-        let divModal = document.createElement('div');
-        divModal.innerHTML = `
-        <div id="modalEntregaEpi" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9999;align-items:center;justify-content:center;">
-            <div style="background:#fff;width:90%;max-width:400px;border-radius:12px;padding:20px;box-shadow:0 10px 30px rgba(0,0,0,0.2);">
-                <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #27ae60;padding-bottom:10px;margin-bottom:15px;">
-                    <h3 style="margin:0;color:#27ae60;"><i class="fas fa-box-open"></i> Entregar EPI</h3>
-                    <button onclick="fecharModalEntregaEpi()" style="background:none;border:none;font-size:24px;cursor:pointer;">&times;</button>
-                </div>
-                <div id="modalEntregaEpiNome" style="background:#e8f8f5;border-radius:8px;padding:10px;margin-bottom:12px;font-weight:bold;color:#117a65;"></div>
-                <div id="modalEntregaEpiItens" style="margin-bottom:16px;"></div>
-                <input type="hidden" id="modalEntregaEpiId">
-                <div style="display:flex;gap:10px;border-top:1px solid #eee;padding-top:14px;">
-                    <button onclick="confirmarEntregaEpi('total')" style="flex:1;padding:10px;background:#27ae60;color:white;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">Entregar Tudo</button>
-                    <button onclick="confirmarEntregaEpi('parcial')" style="flex:1;padding:10px;background:#f39c12;color:white;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">Entrega Parcial</button>
-                </div>
-            </div>
-        </div>`;
-        document.body.appendChild(divModal);
-    }
-}, 1000);
-
-// 2. Lógica do Modal de EPI
-window.abrirModalEntregaEpi = function(docId) {
-    let epi = (typeof dE !== 'undefined' ? dE : []).find(e => e.id === String(docId));
-    if(!epi) return;
-    document.getElementById('modalEntregaEpiId').value = docId;
-    document.getElementById('modalEntregaEpiNome').innerText = "Colaborador: " + (epi.nome || "Não informado");
-    let itensArray = epi.itens ? epi.itens.split(',').map(i => i.trim()).filter(i => i) : [];
-    let htmlItens = "";
-    itensArray.forEach(item => {
-        let jaEntregue = item.includes('[ENTREGUE]');
-        let nomeItem = item.replace('[ENTREGUE]', '').trim();
-        htmlItens += `<label style="display:flex;align-items:center;padding:10px;border:1px solid #eee;border-radius:6px;margin-bottom:5px;background:${jaEntregue ? '#f9f9f9' : '#fff'}">
-            <input type="checkbox" class="chk-entrega-epi" value="${nomeItem}" ${jaEntregue ? 'checked disabled' : ''} style="margin-right:10px;transform:scale(1.2);">
-            <span style="font-weight:bold;color:${jaEntregue ? '#aaa' : '#333'}; ${jaEntregue ? 'text-decoration:line-through;' : ''}">${nomeItem}</span>
-            ${jaEntregue ? '<span style="margin-left:auto;font-size:11px;color:#27ae60;font-weight:bold;">Entregue</span>' : ''}
-        </label>`;
-    });
-    document.getElementById('modalEntregaEpiItens').innerHTML = htmlItens;
-    document.getElementById('modalEntregaEpi').style.display = 'flex';
-};
-window.fecharModalEntregaEpi = function() { document.getElementById('modalEntregaEpi').style.display = 'none'; };
-window.confirmarEntregaEpi = function(tipo) {
-    let docId = document.getElementById('modalEntregaEpiId').value;
-    let epi = dE.find(e => e.id === docId);
-    if(!epi) return;
-    let chks = document.querySelectorAll('.chk-entrega-epi');
-    let itensAt = [], todosEntregues = true;
-    chks.forEach(chk => {
-        if(chk.disabled || chk.checked || tipo === 'total') itensAt.push(chk.value + " [ENTREGUE]");
-        else { itensAt.push(chk.value); todosEntregues = false; }
-    });
-    epi.itens = itensAt.join(', ');
-    epi.status = (tipo === 'total' || todosEntregues) ? 'Entregue' : 'Entrega Parcial';
-    if(typeof window.saveToDB === 'function') window.saveToDB('epis', docId, epi);
-    fecharModalEntregaEpi();
-    if(typeof renderEpi === 'function') renderEpi();
-    alert("Entrega processada com sucesso!");
-};
-
-// 3. O Detetive e Intercetador (Resolve o problema dos Cargos e do Botão)
-setInterval(() => {
-    let quadro = document.getElementById('quadro-info-display');
-    if (quadro && typeof dRH !== 'undefined') {
-        // Pega todos os ativos
-        let ativos = dRH.filter(c => {
-            let status = (c.status || c.Status || "").toString().toLowerCase();
-            return status.includes('ativo');
-        });
-
-        // Função inteligente que procura a coluna de Cargo não importa como se chame
-        const acharCargo = (c) => {
-            let chaves = Object.keys(c);
-            let chaveCargo = chaves.find(k => k.toLowerCase().includes('cargo') || k.toLowerCase().includes('fun'));
-            return chaveCargo ? String(c[chaveCargo]).toLowerCase() : "";
-        };
-
-        let sups = ativos.filter(c => acharCargo(c).includes('supervis')).length;
-        let lids = ativos.filter(c => acharCargo(c).includes('lider') || acharCargo(c).includes('líder')).length;
-        let ops = ativos.filter(c => acharCargo(c).includes('operador')).length;
-        
-        quadro.innerHTML = `📊 <strong>${ativos.length} ativos</strong> | ${sups} supervisores | ${lids} líderes | ${ops} operadores`;
-    }
-
-    // Varre a tela à procura do botão "Entregar" que não esteja a funcionar
-    document.querySelectorAll('button').forEach(btn => {
-        let texto = btn.innerText.trim().toLowerCase();
-        let acao = btn.getAttribute('onclick') || "";
-        if ((texto === 'entregar' || texto.includes('entregar epi')) && !acao.includes('abrirModalEntregaEpi')) {
-            let idMatch = acao.match(/'([^']+)'/) || acao.match(/"([^"]+)"/); 
-            if (idMatch && idMatch[1]) {
-                btn.setAttribute('onclick', `abrirModalEntregaEpi('${idMatch[1]}')`);
-            }
-        }
-    });
-}, 1000);
-
-// Intercetador Absoluto: Impede que o sistema use a função antiga de entregar
-if (typeof window.mudarStatusEpi !== 'undefined' && !window.mudarStatusEpi_modificada) {
-    const funcaoAntiga = window.mudarStatusEpi;
-    window.mudarStatusEpi = function(id, novoStatus) {
-        if (novoStatus === 'Entregue' || novoStatus === 'Entregar') {
-            abrirModalEntregaEpi(id);
-        } else {
-            funcaoAntiga(id, novoStatus);
-        }
-    };
-    window.mudarStatusEpi_modificada = true;
-}
-// ==========================================
-// FREIO DE SALVAMENTO AUTOMÁTICO (Evita Esgotar o Firebase)
-// ==========================================
-if (typeof window.autoSaveData === 'function' && !window.autoSaveData_protegido) {
-    const funcaoAutoSaveOriginal = window.autoSaveData;
-    let temporizadorAutoSave = null;
-
-    window.autoSaveData = function(...args) {
-        // Cancela o salvamento anterior se a função for chamada rápido demais
-        clearTimeout(temporizadorAutoSave);
-        
-        // Aguarda 2.5 segundos de "inatividade" antes de mandar salvar na nuvem
-        temporizadorAutoSave = setTimeout(() => {
-            funcaoAutoSaveOriginal.apply(this, args);
-        }, 2500); 
-    };
-    
-    window.autoSaveData_protegido = true;
-    console.log("Freio de AutoSave ativado com sucesso.");
-}
