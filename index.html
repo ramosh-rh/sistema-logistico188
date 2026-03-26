@@ -1,6 +1,42 @@
 <!DOCTYPE html>
 <html lang="pt-PT">
 <head>
+<script>
+// ==========================================
+// 1. CORREÇÃO DO DASHBOARD (A função que faltava)
+// ==========================================
+if (typeof window.setDRH === 'undefined') {
+    window.setDRH = function(id, val) {
+        let el = document.getElementById(id);
+        if (el) { el.innerText = val; }
+    };
+}
+
+// ==========================================
+// 2. PROTEÇÃO DE TELA BRANCA (Gráficos fantasmas)
+// ==========================================
+const chartFalso = { destroy: function(){}, update: function(){} };
+if (typeof window.renderChartAbsMotivo === 'undefined') window.renderChartAbsMotivo = function() { return chartFalso; };
+if (typeof window.renderChartAbsSetor === 'undefined') window.renderChartAbsSetor = function() { return chartFalso; };
+if (typeof window.renderChartTurnover === 'undefined') window.renderChartTurnover = function() { return chartFalso; };
+if (typeof window.renderChartPonto === 'undefined') window.renderChartPonto = function() { return chartFalso; };
+if (typeof window.renderChartHoraExtra === 'undefined') window.renderChartHoraExtra = function() { return chartFalso; };
+
+// ==========================================
+// 3. O FREIO DO FIREBASE (Corrige o resource-exhausted)
+// ==========================================
+setTimeout(() => {
+    if (typeof window.autoSaveData === 'function' && !window.autoSaveData_protegido) {
+        const autoSaveAntigo = window.autoSaveData;
+        let timerSalvamento = null;
+        window.autoSaveData = function(...args) {
+            clearTimeout(timerSalvamento);
+            timerSalvamento = setTimeout(() => { autoSaveAntigo.apply(this, args); }, 2500); 
+        };
+        window.autoSaveData_protegido = true;
+    }
+}, 1500);
+</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SISTEMA LOGÍSTICO & RH v164.0: Ponto Mensal & Férias Pro</title>
