@@ -1,27 +1,37 @@
 // ====================================================
-// ARQUIVO SEPARADO DE CORREÇÕES (100% SEGURO) - V5.0
+// ARQUIVO DE CORREÇÕES (V8.0 - BASEADO NO SEU DIAGNÓSTICO!)
 // ====================================================
 
-// 0. VACINA CONTRA O ERRO DO DASHBOARD ("setDRH is not defined")
+// 1. A FUNÇÃO CORRETA QUE ESCREVE NA TELA (Fallback)
 if (typeof window.setDRH === 'undefined') {
-    window.setDRH = function(data) {
-        if (data) window.dRH = data;
+    window.setDRH = function(id, valor) {
+        let el = document.getElementById(id);
+        if (el) { el.innerText = valor; }
     };
 }
 
-// 1. FREIO DE EMERGÊNCIA DO FIREBASE (Protege contra bloqueios)
+// 2. GRÁFICOS FANTASMAS (Sem quebrar o sistema)
+const fakeChart = { destroy: function(){}, update: function(){} };
+if (typeof window.renderChartAbsMotivo === 'undefined') window.renderChartAbsMotivo = function() { return fakeChart; };
+if (typeof window.renderChartAbsSetor === 'undefined') window.renderChartAbsSetor = function() { return fakeChart; };
+if (typeof window.renderChartTurnover === 'undefined') window.renderChartTurnover = function() { return fakeChart; };
+if (typeof window.renderChartPonto === 'undefined') window.renderChartPonto = function() { return fakeChart; };
+if (typeof window.renderChartHoraExtra === 'undefined') window.renderChartHoraExtra = function() { return fakeChart; };
+
+// 3. FREIO DO FIREBASE (Protege contra bloqueios)
 if (typeof window.autoSaveData === 'function' && !window.autoSaveData_protegido) {
-    const funcaoAutoSaveOriginal = window.autoSaveData;
-    let temporizadorAutoSave = null;
+    const fOriginal = window.autoSaveData;
+    let timer = null;
     window.autoSaveData = function(...args) {
-        clearTimeout(temporizadorAutoSave);
-        temporizadorAutoSave = setTimeout(() => { funcaoAutoSaveOriginal.apply(this, args); }, 2500); 
+        clearTimeout(timer);
+        timer = setTimeout(() => { fOriginal.apply(this, args); }, 2500); 
     };
     window.autoSaveData_protegido = true;
 }
 
-// 2. INJETA O MODAL E O QUADRO AUTOMATICAMENTE
+// 4. MODAL EPI E QUADRO RH (Injeção Visual)
 window.addEventListener('load', function() {
+    // Injeta Modal EPI
     if (!document.getElementById('modalEntregaEpi')) {
         let divModal = document.createElement('div');
         divModal.innerHTML = `
@@ -43,6 +53,7 @@ window.addEventListener('load', function() {
         document.body.appendChild(divModal);
     }
 
+    // Injeta Quadro Colaboradores
     let abaColab = document.getElementById('view-rh-colaboradores');
     if (abaColab && !document.getElementById('quadro-info-display')) {
         let quadroInfo = document.createElement('div');
@@ -52,7 +63,7 @@ window.addEventListener('load', function() {
     }
 });
 
-// 3. LÓGICA DA NOVA JANELA DE EPI
+// 5. FUNÇÕES EPI
 window.abrirModalEntregaEpi = function(docId) {
     try {
         let epi = (typeof dE !== 'undefined' ? dE : []).find(e => String(e.id) === String(docId));
@@ -90,49 +101,21 @@ window.confirmarEntregaEpi = function(tipo) {
         epi.status = (tipo === 'total' || todosEntregues) ? 'Entregue' : 'Entrega Parcial';
         document.getElementById('modalEntregaEpi').style.display = 'none';
         if(typeof renderEpi === 'function') renderEpi();
-        if(typeof window.saveToDB === 'function') window.saveToDB('epis', docId, epi).catch(e=>console.log("Aguardando Banco de Dados."));
+        if(typeof window.saveToDB === 'function') window.saveToDB('epis', docId, epi).catch(e=>console.log("Banco pendente."));
     } catch(e) {}
 };
 
-// 4. MOTOR INTELIGENTE (Painel Dashboard + Quadro + Botões)
+// 6. MOTOR INTELIGENTE
 setInterval(() => {
     try {
-        if (typeof dRH === 'undefined' || !dRH || dRH.length === 0) return;
-
-        // A) Salva o Quadro da Aba de Colaboradores
         let quadro = document.getElementById('quadro-info-display');
-        if (quadro) {
+        if (quadro && typeof dRH !== 'undefined' && dRH.length > 0) {
             let ativos = dRH.filter(c => c.status && c.status.toLowerCase().includes('ativo'));
             let sups = ativos.filter(c => JSON.stringify(c).toLowerCase().includes('supervis')).length;
             let lids = ativos.filter(c => JSON.stringify(c).toLowerCase().includes('lider') || JSON.stringify(c).toLowerCase().includes('líder')).length;
             let ops = ativos.filter(c => JSON.stringify(c).toLowerCase().includes('operador')).length;
             quadro.innerHTML = `📊 <strong>${ativos.length} ativos</strong> | ${sups} supervisores | ${lids} líderes | ${ops} operadores`;
         }
-
-        // B) Salva o Dashboard Principal do RH
-        let totalGeral = dRH.length;
-        let totalFerias = dRH.filter(c => c.status && c.status.toLowerCase().includes('féri')).length;
-        let totalEPIs = (typeof dE !== 'undefined' && dE) ? dE.filter(e => e.status === 'Pendente' || e.status === 'Solicitado' || e.status === 'Entrega Parcial').length : 0;
-
-        let textosKPI = document.querySelectorAll('.kpi-title, div, span');
-        textosKPI.forEach(el => {
-            let texto = el.innerText.trim().toLowerCase();
-            let valor = null;
-
-            if (texto === 'total colaboradores' || texto === 'total de colaboradores') valor = totalGeral;
-            else if (texto === 'em férias' || texto === 'em ferias') valor = totalFerias;
-            else if (texto === 'pendências epi' || texto === 'pendencias epi') valor = totalEPIs;
-
-            if (valor !== null) {
-                let caixaNumero = el.nextElementSibling;
-                if (!caixaNumero || (caixaNumero.innerText.trim() !== '0' && isNaN(parseInt(caixaNumero.innerText)))) {
-                    caixaNumero = el.parentElement.querySelector('.kpi-val, [style*="font-size: 28px"], [id*="total"]');
-                }
-                if (caixaNumero) caixaNumero.innerText = valor;
-            }
-        });
-
-        // C) Força o botão de EPI
         document.querySelectorAll('button').forEach(btn => {
             let txt = btn.innerText.trim().toLowerCase();
             let act = btn.getAttribute('onclick') || "";
