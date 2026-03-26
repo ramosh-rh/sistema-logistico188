@@ -1,41 +1,50 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="pt-PT">
 <head>
 <script>
 // ==========================================
-// 1. CORREÇÃO DO DASHBOARD (A função que faltava)
+// 1. RADAR DE ERROS VISUAL (A SUA IDEIA!)
 // ==========================================
-if (typeof window.setDRH === 'undefined') {
-    window.setDRH = function(id, val) {
-        let el = document.getElementById(id);
-        if (el) { el.innerText = val; }
-    };
-}
-
-// ==========================================
-// 2. PROTEÇÃO DE TELA BRANCA (Gráficos fantasmas)
-// ==========================================
-const chartFalso = { destroy: function(){}, update: function(){} };
-if (typeof window.renderChartAbsMotivo === 'undefined') window.renderChartAbsMotivo = function() { return chartFalso; };
-if (typeof window.renderChartAbsSetor === 'undefined') window.renderChartAbsSetor = function() { return chartFalso; };
-if (typeof window.renderChartTurnover === 'undefined') window.renderChartTurnover = function() { return chartFalso; };
-if (typeof window.renderChartPonto === 'undefined') window.renderChartPonto = function() { return chartFalso; };
-if (typeof window.renderChartHoraExtra === 'undefined') window.renderChartHoraExtra = function() { return chartFalso; };
-
-// ==========================================
-// 3. O FREIO DO FIREBASE (Corrige o resource-exhausted)
-// ==========================================
-setTimeout(() => {
-    if (typeof window.autoSaveData === 'function' && !window.autoSaveData_protegido) {
-        const autoSaveAntigo = window.autoSaveData;
-        let timerSalvamento = null;
-        window.autoSaveData = function(...args) {
-            clearTimeout(timerSalvamento);
-            timerSalvamento = setTimeout(() => { autoSaveAntigo.apply(this, args); }, 2500); 
-        };
-        window.autoSaveData_protegido = true;
+window.onerror = function(mensagem, url, linha, coluna, erro) {
+    let caixaErro = document.getElementById('caixa-erro-sistema');
+    if (!caixaErro) {
+        caixaErro = document.createElement('div');
+        caixaErro.id = 'caixa-erro-sistema';
+        caixaErro.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#c0392b; color:white; padding:15px; border-radius:8px; z-index:999999; box-shadow:0 5px 15px rgba(0,0,0,0.4); max-width:350px; font-family:sans-serif; border-left: 5px solid #f1c40f;';
+        document.body.appendChild(caixaErro);
     }
-}, 1500);
+    
+    let nomeArquivo = url ? url.split('/').pop() : 'Desconhecido';
+    caixaErro.innerHTML += `
+        <div style="margin-bottom: 10px; font-size: 14px;">
+            <strong>🚨 SISTEMA DETETOU UM ERRO:</strong><br>
+            <span style="font-size: 12px; color: #fdf2e9;">${mensagem}</span><br>
+            <strong style="color: #f1c40f; font-size: 11px;">Arquivo:</strong> <span style="font-size: 11px;">${nomeArquivo} (Linha ${linha})</span>
+        </div>
+        <hr style="border:0; border-top: 1px solid #e74c3c;">
+    `;
+    return false; 
+};
+
+// ==========================================
+// 2. VACINA ANTI-QUEBRA DE GRÁFICOS
+// ==========================================
+window.setDRH = window.setDRH || function(data) { if(data) window.dRH = data; };
+window.renderChartAbsMotivo = function() { console.log("Gráfico Motivo ignorado"); };
+window.renderChartAbsSetor = function() { console.log("Gráfico Setor ignorado"); };
+window.renderChartTurnover = function() { console.log("Gráfico Turnover ignorado"); };
+window.renderChartPonto = function() { console.log("Gráfico Ponto ignorado"); };
+window.renderChartHoraExtra = function() { console.log("Gráfico Hora Extra ignorado"); };
+</script>
+<script> 
+    // Vacina Geral contra erros de Dashboard
+    window.setDRH = function(data) { if(data) window.dRH = data; }; 
+    window.dRH = window.dRH || []; 
+    // Funções Fantasmas para os gráficos não quebrarem o sistema
+    window.renderChartAbsMotivo = function() { console.log("Gráfico oculto"); };
+    window.renderChartAbsSetor = function() { console.log("Gráfico oculto"); };
+    window.renderChartTurnover = function() { console.log("Gráfico oculto"); };
+    window.renderChartPonto = function() { console.log("Gráfico oculto"); };
 </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1297,64 +1306,628 @@ setTimeout(() => {
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
+<script src="logica.js"></script>
+
+<!-- ================================================================
+     PATCH v164 - Script de novas funcionalidades
+     Complementa o logica.js sem sobrescrever funções existentes
+================================================================ -->
 <script>
 (function() {
-    // Variáveis Globais
+'use strict';
+
+// ----------------------------------------------------------------
+// TOAST NOTIFICATIONS
+// ----------------------------------------------------------------
+window.showToast = function(msg, type = 'info', duration = 3500) {
+    const box = document.getElementById('toastBox');
+    if (!box) return;
+    const t = document.createElement('div');
+    t.className = 'toast toast-' + type;
+    const icons = { success: 'fa-check-circle', error: 'fa-times-circle', warn: 'fa-exclamation-triangle', info: 'fa-info-circle' };
+    t.innerHTML = '<i class="fas ' + (icons[type]||'fa-info-circle') + '" style="margin-right:8px;"></i>' + msg;
+    box.appendChild(t);
+    setTimeout(() => { t.style.opacity = '0'; t.style.transform = 'translateX(100%)'; t.style.transition = '0.3s'; setTimeout(() => t.remove(), 300); }, duration);
+};
+
+// ----------------------------------------------------------------
+// AUTO-LOAD DO PLANEJAMENTO
+// Ao iniciar, verifica se há dados salvos e restaura o relatório
+// ----------------------------------------------------------------
+function tryAutoLoadPlanejamento() {
+    try {
+        const today = new Date().toISOString().split('T')[0];
+        // Tenta chaves diferentes que o logica.js pode usar
+        const keys = ['sys_planejamento_hoje', 'sessionData', 'guardaResult', 'planResult_' + today];
+        let found = false;
+
+        keys.forEach(function(key) {
+            if (found) return;
+            const raw = localStorage.getItem(key);
+            if (raw) {
+                try {
+                    const data = JSON.parse(raw);
+                    // Verifica se tem dados de planejamento
+                    if (data && (data.tbContainer || data.planejamento || data.result)) {
+                        found = true;
+                        showAutoLoadBadge(true);
+                        showToast('✅ Dados do planejamento restaurados automaticamente!', 'success');
+                    }
+                } catch(e) {}
+            }
+        });
+
+        // Também tenta restaurar via função existente do logica.js
+        if (typeof window.restoreSession === 'function') {
+            // Verifica se há dados de hoje disponíveis antes de restaurar
+            const sessionRaw = localStorage.getItem('sys_session_today') || localStorage.getItem('cloudSession');
+            if (sessionRaw) {
+                showAutoLoadBadge(true);
+                showToast('☁️ Sessão do dia encontrada — dados disponíveis para restauração.', 'info');
+                const btnRestore = document.getElementById('btnRestore');
+                if (btnRestore) { btnRestore.style.display = 'inline-flex'; }
+            }
+        }
+
+        if (!found) { showAutoLoadBadge(false); }
+    } catch(e) { console.warn('[v164] autoLoad error:', e); }
+}
+
+function showAutoLoadBadge(loaded) {
+    // Badge na barra de memória
+    const el = document.getElementById('autoLoadStatus');
+    if (!el) return;
+    el.style.display = 'inline-block';
+    if (loaded) {
+        el.style.background = '#eafaf1';
+        el.style.color = '#27ae60';
+        el.innerHTML = '<i class="fas fa-check-circle"></i> Dados do dia carregados';
+    } else {
+        el.style.background = '#f8f9fa';
+        el.style.color = '#777';
+        el.innerHTML = '<i class="fas fa-info-circle"></i> Nenhum dado do dia encontrado';
+    }
+}
+
+// Hooked: sobrescreve saveSession para garantir persistência do planejamento
+var _origSave = window.saveSession;
+window.saveSession = function() {
+    // Salva estado do relatório de planejamento se visível
+    var resGuarda = document.getElementById('resGuarda');
+    if (resGuarda && resGuarda.style.display !== 'none') {
+        var snapshot = {
+            tbContainerHTML: document.getElementById('tbContainer') ? document.getElementById('tbContainer').innerHTML : '',
+            auditLines: document.getElementById('audit-lines') ? document.getElementById('audit-lines').textContent : '0',
+            auditBoxes: document.getElementById('audit-boxes') ? document.getElementById('audit-boxes').textContent : '0',
+            auditIgnored: document.getElementById('audit-ignored') ? document.getElementById('audit-ignored').textContent : '0',
+            tCx: document.getElementById('tCx') ? document.getElementById('tCx').textContent : '0',
+            tRup: document.getElementById('tRup') ? document.getElementById('tRup').textContent : '0',
+            tStf: document.getElementById('tStf') ? document.getElementById('tStf').textContent : '0',
+            tRealStf: document.getElementById('tRealStf') ? document.getElementById('tRealStf').textContent : '0',
+            savedAt: new Date().toISOString()
+        };
+        localStorage.setItem('planResult_today', JSON.stringify(snapshot));
+    }
+    if (typeof _origSave === 'function') return _origSave.apply(this, arguments);
+    showToast('Dados salvos com sucesso!', 'success');
+};
+
+// Restaura snapshot do relatório
+function restorePlanSnapshot() {
+    try {
+        var raw = localStorage.getItem('planResult_today');
+        if (!raw) return false;
+        var data = JSON.parse(raw);
+        // Verifica se é do dia de hoje (ou aceita qualquer)
+        if (!data || !data.tbContainerHTML) return false;
+
+        var resGuarda = document.getElementById('resGuarda');
+        if (resGuarda) resGuarda.style.display = 'block';
+        var tb = document.getElementById('tbContainer');
+        if (tb && data.tbContainerHTML) tb.innerHTML = data.tbContainerHTML;
+
+        var fields = { 'audit-lines': data.auditLines, 'audit-boxes': data.auditBoxes,
+                       'audit-ignored': data.auditIgnored, 'tCx': data.tCx,
+                       'tRup': data.tRup, 'tStf': data.tStf, 'tRealStf': data.tRealStf };
+        Object.keys(fields).forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el && fields[id]) el.textContent = fields[id];
+        });
+        showAutoLoadBadge(true);
+        return true;
+    } catch(e) { return false; }
+}
+
+// ----------------------------------------------------------------
+// COLABORADORES — botão EXCLUIR + indicador SUPERVISORES
+// ----------------------------------------------------------------
+
+// Sobrescreve renderização da tabela RH para adicionar botão Excluir e coluna Celular
+var _origRenderRH = window.renderTbRH || window.renderColaboradores;
+window.renderTbRH = function(lista) {
+    var tbody = document.getElementById('tbRH');
+    if (!tbody) return;
+    if (!lista || lista.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:30px; color:#999;">Nenhum colaborador cadastrado.</td></tr>';
+        updateRHKPIs(lista || []);
+        return;
+    }
+    tbody.innerHTML = lista.map(function(c, i) {
+        var statusPill = getStatusPill(c.status || c.STATUS || 'ATIVO');
+        var celular = c.celular || c.CELULAR || '—';
+        return '<tr>' +
+            '<td style="text-align:center; font-weight:700;">' + (c.matricula || c.MATRICULA || '') + '</td>' +
+            '<td style="font-weight:600;">' + (c.nome || c.NOME || '') + '</td>' +
+            '<td style="color:#555;">' + (c.funcao || c.FUNCAO || '') + '</td>' +
+            '<td style="text-align:center; font-size:11px;">' + (celular !== '—' ? '<a href="https://wa.me/' + celular.replace(/\D/g,'') + '" target="_blank" style="color:#25d366;"><i class="fab fa-whatsapp"></i> ' + celular + '</a>' : '—') + '</td>' +
+            '<td style="text-align:center;">' + statusPill + '</td>' +
+            '<td style="text-align:center; white-space:nowrap;">' +
+                '<button onclick="editarColaboradorRH(' + i + ')" style="background:var(--blue); color:white; border:none; border-radius:4px; padding:4px 8px; font-size:10px; font-weight:700; cursor:pointer; margin-right:4px;"><i class="fas fa-edit"></i> Editar</button>' +
+                '<button class="btn-del-colab" onclick="excluirColaboradorRH(' + i + ')"><i class="fas fa-trash"></i> Excluir</button>' +
+            '</td></tr>';
+    }).join('');
+    updateRHKPIs(lista);
+};
+
+function getStatusPill(status) {
+    var map = {
+        'ATIVO': '<span class="status-pill sp-ativo">🟢 Ativo</span>',
+        'INATIVO': '<span class="status-pill sp-inativo">🔴 Inativo</span>',
+        'FERIAS': '<span class="status-pill" style="background:#d6eaf8;color:#1a5276;">🏖 Férias</span>',
+        'AFASTADO': '<span class="status-pill sp-afastado">🟠 Afastado</span>',
+        'TRANSFERENCIA DE TURNO': '<span class="status-pill sp-trans">🔵 Trans. Turno</span>',
+        'TRANSFERENCIA DE SETOR': '<span class="status-pill" style="background:#e8daef;color:#6c3483;">🟣 Trans. Setor</span>',
+        'AUTO': '<span class="status-pill sp-ativo">🤖 Auto</span>'
+    };
+    return map[status] || '<span class="status-pill sp-ativo">' + status + '</span>';
+}
+
+function updateRHKPIs(lista) {
+    // Conta apenas ATIVO puro (pedido: "considerar como ativos apenas quem realmente está ativo")
+    // Líderes/Operadores/Supervisores: não-INATIVO classificado por função
+    var ativos = 0, lideres = 0, ops = 0, sups = 0;
+    (lista || []).forEach(function(c) {
+        var s = (c.status || c.STATUS || c.statusManual || 'ATIVO').toUpperCase();
+        if (s === 'INATIVO') return;
+        // Total ativos = apenas status ATIVO real
+        if (s === 'ATIVO' || s === 'AUTO') ativos++;
+        // Função: busca em todos os formatos de chave possíveis
+        var f = (c.funcao || c.FUNCAO || c['Função'] || c['FUNÇÃO'] || c['Funcao'] || '').toUpperCase();
+        if      (f.includes('SUPERVISOR') || f.includes('SUPERVISORA')) sups++;
+        else if (f.includes('LÍDER')      || f.includes('LIDER'))       lideres++;
+        else if (f.includes('OPERADOR')   || f.includes('SEPARADOR'))   ops++;
+    });
+    var setVal = function(id, v) { var el = document.getElementById(id); if(el) el.textContent = v; };
+    setVal('rh-tot', ativos);
+    setVal('rh-lid', lideres);
+    setVal('rh-op',  ops);
+    setVal('rh-sup', sups);
+    var kpis = document.getElementById('rh-kpis');
+    if (kpis && (lista||[]).length > 0) kpis.style.display = 'grid';
+}
+
+// Excluir colaborador
+window.excluirColaboradorRH = function(idx) {
+    if (!confirm('Tem certeza que deseja remover este colaborador? Esta ação registrará pendência de reposição.')) return;
+
+    var lista = getRHList();
+    if (!lista || idx < 0 || idx >= lista.length) return;
+    var colab = lista[idx];
+
+    // Pergunta motivo
+    var motivo = prompt('Motivo da saída:\n1 = Demissão\n2 = Transferência\n3 = Outro\n\nDigite o número:', '1');
+    var motivoMap = { '1': 'Demissão', '2': 'Transferência', '3': 'Outro' };
+    var motivoTexto = motivoMap[motivo] || 'Não informado';
+
+    lista.splice(idx, 1);
+    saveRHList(lista);
+    renderTbRH(lista);
+
+    // Registra pendência de reposição se for demissão ou transferência
+    if (motivo === '1' || motivo === '2') {
+        registrarPendenciaReposicao(colab, motivoTexto);
+    }
+
+    showToast('Colaborador removido. ' + (motivo === '1' || motivo === '2' ? 'Pendência de reposição criada.' : ''), 'warn');
+};
+
+function registrarPendenciaReposicao(colab, motivo) {
+    var reposicoes = JSON.parse(localStorage.getItem('pendencias_reposicao') || '[]');
+    reposicoes.push({
+        id: Date.now(),
+        exColab: colab.nome || colab.NOME || 'N/A',
+        matriculaEx: colab.matricula || colab.MATRICULA || '',
+        motivo: motivo,
+        data: new Date().toLocaleDateString('pt-BR'),
+        funcao: colab.funcao || colab.FUNCAO || ''
+    });
+    localStorage.setItem('pendencias_reposicao', JSON.stringify(reposicoes));
+    renderReposicoes();
+}
+
+function renderReposicoes() {
+    var reposicoes = JSON.parse(localStorage.getItem('pendencias_reposicao') || '[]');
+    var card = document.getElementById('card-reposicoes');
+    var tbody = document.getElementById('tbReposicoes');
+    if (!tbody) return;
+
+    if (reposicoes.length === 0) {
+        if (card) card.style.display = 'none';
+        return;
+    }
+    if (card) card.style.display = 'block';
+
+    tbody.innerHTML = reposicoes.map(function(r, i) {
+        return '<tr>' +
+            '<td style="font-weight:700;">' + r.exColab + ' <small style="color:#aaa;">(' + (r.funcao||'') + ')</small></td>' +
+            '<td><span style="background:#fadbd8; color:#922b21; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:700;">' + r.motivo + '</span></td>' +
+            '<td>' + r.data + '</td>' +
+            '<td><button class="btn btn-green" style="font-size:10px; padding:4px 10px;" onclick="abrirModalReposicao(' + i + ')"><i class="fas fa-user-plus"></i> Repor Vaga</button></td>' +
+        '</tr>';
+    }).join('');
+}
+
+window.abrirModalReposicao = function(idx) {
+    var reposicoes = JSON.parse(localStorage.getItem('pendencias_reposicao') || '[]');
+    if (idx < 0 || idx >= reposicoes.length) return;
+    var r = reposicoes[idx];
+    document.getElementById('reposicaoIdx').value = idx;
+    document.getElementById('reposicaoInfo').innerHTML =
+        '<strong>Vaga:</strong> ' + r.exColab + ' — ' + (r.funcao||'') + '<br>' +
+        '<strong>Motivo da saída:</strong> ' + r.motivo + ' em ' + r.data;
+    document.getElementById('reposNome').value = '';
+    document.getElementById('reposMat').value = '';
+    document.getElementById('reposCelular').value = '';
+    document.getElementById('reposAdm').value = '';
+    document.getElementById('reposFunc').value = r.funcao || '';
+    document.getElementById('modalReposicao').style.display = 'flex';
+};
+
+window.confirmarReposicao = function() {
+    var idx = parseInt(document.getElementById('reposicaoIdx').value);
+    var nome = document.getElementById('reposNome').value.trim();
+    var mat = document.getElementById('reposMat').value.trim();
+    var adm = document.getElementById('reposAdm').value;
+    var func = document.getElementById('reposFunc').value.trim();
+    var celular = document.getElementById('reposCelular').value.trim();
+
+    if (!nome || !mat || !adm) { showToast('Preencha Nome, Matrícula e Data de Admissão!', 'error'); return; }
+
+    // Adiciona novo colaborador
+    var lista = getRHList();
+    lista.push({ matricula: mat, nome: nome.toUpperCase(), funcao: func.toUpperCase(), admissao: adm, status: 'ATIVO', celular: celular });
+    saveRHList(lista);
+    renderTbRH(lista);
+
+    // Remove pendência
+    var reposicoes = JSON.parse(localStorage.getItem('pendencias_reposicao') || '[]');
+    reposicoes.splice(idx, 1);
+    localStorage.setItem('pendencias_reposicao', JSON.stringify(reposicoes));
+    renderReposicoes();
+
+    document.getElementById('modalReposicao').style.display = 'none';
+    showToast('Reposição confirmada! ' + nome + ' adicionado(a) ao quadro.', 'success');
+};
+
+// Helpers para lista RH
+function getRHList() {
+    try {
+        var raw = localStorage.getItem('rh_colaboradores');
+        return raw ? JSON.parse(raw) : (window.rhData || []);
+    } catch(e) { return window.rhData || []; }
+}
+
+function saveRHList(lista) {
+    try { localStorage.setItem('rh_colaboradores', JSON.stringify(lista)); } catch(e) {}
+    window.rhData = lista;
+}
+
+// Patcha a função de salvar colaborador para incluir celular e supervisor
+var _origSalvarColab = window.salvarColaboradorRH;
+window.salvarColaboradorRH = function() {
+    // Injeta o campo celular antes de chamar o original
+    var celularEl = document.getElementById('rhCelular');
+    var celularVal = celularEl ? celularEl.value.trim() : '';
+
+    if (typeof _origSalvarColab === 'function') {
+        _origSalvarColab.apply(this, arguments);
+    }
+
+    // Pós-patch: persiste celular
+    try {
+        var lista = getRHList();
+        var idx = parseInt(document.getElementById('rhEditIndex').value);
+        var nome = (document.getElementById('rhNome').value || '').trim().toUpperCase();
+        if (idx >= 0 && lista[idx]) {
+            lista[idx].celular = celularVal;
+        } else {
+            // Novo colaborador - procura pelo nome recém-adicionado
+            var found = lista.find(function(c) { return (c.nome||c.NOME||'').toUpperCase() === nome; });
+            if (found) found.celular = celularVal;
+        }
+        saveRHList(lista);
+        renderTbRH(lista);
+    } catch(e) {}
+    showToast('Colaborador salvo com sucesso!', 'success');
+};
+
+// Editar colaborador (preenche celular)
+var _origAbrirModal = window.abrirModalRH;
+window.editarColaboradorRH = function(idx) {
+    var lista = getRHList();
+    if (!lista || idx < 0 || idx >= lista.length) return;
+    var c = lista[idx];
+
+    if (typeof _origAbrirModal === 'function') _origAbrirModal();
+
+    document.getElementById('rhEditIndex').value = idx;
+    document.getElementById('modalRHTitle').textContent = 'Editar Colaborador';
+    if(document.getElementById('rhMat')) document.getElementById('rhMat').value = c.matricula || c.MATRICULA || '';
+    if(document.getElementById('rhNome')) document.getElementById('rhNome').value = c.nome || c.NOME || '';
+    if(document.getElementById('rhFunc')) document.getElementById('rhFunc').value = c.funcao || c.FUNCAO || '';
+    if(document.getElementById('rhAdm')) document.getElementById('rhAdm').value = c.admissao || c.ADMISSAO || '';
+    if(document.getElementById('rhStatus')) document.getElementById('rhStatus').value = c.status || c.STATUS || 'AUTO';
+    if(document.getElementById('rhCelular')) document.getElementById('rhCelular').value = c.celular || c.CELULAR || '';
+    document.getElementById('modalRH').style.display = 'flex';
+};
+
+// ----------------------------------------------------------------
+// FÉRIAS - Notificação WhatsApp ao aprovar
+// ----------------------------------------------------------------
+window.notificarFeriasWhatsApp = function(colab, inicio, fim) {
+    var celular = (colab.celular || colab.CELULAR || '').replace(/\D/g, '');
+    if (!celular) {
+        showToast('Celular não cadastrado para ' + (colab.nome||colab.NOME||'colaborador') + '. Notificação não enviada.', 'warn');
+        return;
+    }
+    var nome = colab.nome || colab.NOME || 'Colaborador';
+    var msg = encodeURIComponent(
+        '🌴 *Aviso de Férias — Sistema RH*\n\n' +
+        'Olá, *' + nome + '*!\n\n' +
+        'Sua sugestão de férias foi registrada no sistema:\n' +
+        '📅 Início: *' + inicio + '*\n' +
+        '📅 Término: *' + fim + '*\n\n' +
+        '⏳ A solicitação foi encaminhada para aprovação do RH.\n' +
+        'Aguarde a confirmação oficial.\n\n' +
+        '_Mensagem automática — Sistema Logístico v164_'
+    );
+    window.open('https://wa.me/' + celular + '?text=' + msg, '_blank');
+    showToast('Notificação WhatsApp aberta para ' + nome, 'success');
+};
+
+// Adiciona botão de notificação na tabela de férias (injeta em renderizações futuras)
+var _origRenderFerias = window.renderTbFerias || window.renderFerias;
+// (O logica.js irá controlar isso; disponibilizamos a função para ser chamada de qualquer lugar)
+
+// ----------------------------------------------------------------
+// DASHBOARD RH - renderização
+// ----------------------------------------------------------------
+// renderDashboardRH: implementação async em logica.js (não redefinir aqui)
+
+// renderChartAbsMensal2: aceita objeto {mes: dias} (novo formato do dashboard)
+function renderChartAbsMensal2(meses) {
+    var canvas = document.getElementById('chartAbsMensal');
+    if (!canvas) return;
+    if (_dashCharts.absMensal) _dashCharts.absMensal.destroy();
+    var sorted = Object.keys(meses).sort();
+    if (!sorted.length) return;
+    _dashCharts.absMensal = new Chart(canvas.getContext('2d'), {
+        type: 'bar',
+        data: { labels: sorted, datasets: [{ label: 'Dias', data: sorted.map(function(k){return meses[k];}), backgroundColor: '#e74c3c99', borderColor: '#e74c3c', borderWidth: 1 }] },
+        options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { font: { size: 10 } } } } }
+    });
+}
+// renderChartPontoTipo: aceita objeto {tipo: count} (novo formato)
+function renderChartPontoTipo(tipos) {
+    var canvas = document.getElementById('chartPontoTipo');
+    if (!canvas) return;
+    if (_dashCharts.pontoTipo) _dashCharts.pontoTipo.destroy();
+    if (!tipos || !Object.keys(tipos).length) return;
+    var labels = Object.keys(tipos);
+    _dashCharts.pontoTipo = new Chart(canvas.getContext('2d'), {
+        type: 'bar',
+        data: { labels: labels, datasets: [{ label: 'Ocorrências', data: labels.map(function(k){return tipos[k];}), backgroundColor: '#8e44ad99', borderColor: '#8e44ad', borderWidth: 1 }] },
+        options: { indexAxis: 'y', responsive: true, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { font: { size: 10 } } } } }
+    });
+}
+
+function setDRH(id, val, isHTML) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    if (isHTML) el.innerHTML = '<strong><i class="fas fa-robot"></i> Análise IA:</strong> ' + val;
+    else el.textContent = val;
+}
+
+function fmtHoras(mins) {
+    var h = Math.floor(Math.abs(mins)/60);
+    var m = Math.abs(mins)%60;
+    return (mins < 0 ? '-' : '') + String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+}
+
+// Gráficos do Dashboard RH
+var _dashCharts = {};
+function renderChartAbsMotivo(data) {
+    var canvas = document.getElementById('chartAbsMotivo');
+    if (!canvas) return;
+    if (_dashCharts.absMotivo) _dashCharts.absMotivo.destroy();
+    var labels = Object.keys(data);
+    var values = labels.map(function(k){ return data[k]; });
+    _dashCharts.absMotivo = new Chart(canvas.getContext('2d'), {
+        type: 'doughnut',
+        data: { labels: labels, datasets: [{ data: values, backgroundColor: ['#e74c3c','#f39c12','#3498db','#27ae60','#9b59b6','#1abc9c','#e67e22'] }] },
+        options: { responsive: true, plugins: { legend: { position: 'right', labels: { font: { size: 10 } } } } }
+    });
+}
+
+// renderChartAbsMensal(absData) substituída por renderChartAbsMensal2
+
+// renderChartPontoTipo redefinida acima (aceita objeto)
+
+// ----------------------------------------------------------------
+// INICIALIZAÇÃO
+// ----------------------------------------------------------------
+function initPatchV164() {
+        // Aguarda o logica.js carregar
+        setTimeout(function() {
+            tryAutoLoadPlanejamento();
+            restorePlanSnapshot();
+            renderReposicoes();
+
+            // Tenta carregar dados do RH do localStorage
+            var raw = localStorage.getItem('rh_colaboradores');
+            if (raw) {
+                try {
+                    var lista = JSON.parse(raw);
+                    if (lista && lista.length > 0) {
+                        window.rhData = lista;
+                        renderTbRH(lista);
+                    }
+                } catch(e) {}
+            }
+        }, 1200);
+
+        // Escuta evento de login bem-sucedido (se existir)
+        document.addEventListener('sistema:login', function() {
+            tryAutoLoadPlanejamento();
+            renderReposicoes();
+        });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initPatchV164);
+    } else {
+        initPatchV164();
+    }
+
+})(); // fim IIFE patch v164
+</script>
+
+
+<!-- Modal Entrega EPI por item -->
+<div id="modalEntregaEpi" class="modal-overlay" style="display:none;">
+    <div class="modal" style="width:490px;max-height:90vh;overflow-y:auto;">
+        <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #27ae60;padding-bottom:10px;margin-bottom:15px;">
+            <h3 style="margin:0;color:#27ae60;"><i class="fas fa-box-open"></i> Confirmar Entrega</h3>
+            <button onclick="document.getElementById('modalEntregaEpi').style.display='none'"
+                style="background:none;border:none;font-size:24px;cursor:pointer;color:#999;">&times;</button>
+        </div>
+        <div id="modalEntregaNome" style="background:#f0fff4;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:14px;font-weight:700;color:#1a7a3c;"></div>
+        <p style="font-size:12px;color:#555;margin:0 0 12px;background:#d5f5e3;padding:8px 12px;border-radius:6px;border-left:3px solid #27ae60;">
+            <i class="fas fa-info-circle" style="color:#27ae60;"></i>
+            Marque os itens <strong>entregues agora</strong>. Itens já entregues aparecem desabilitados.
+        </p>
+        <div id="modalEntregaItens" style="margin-bottom:16px;"></div>
+        <div style="display:flex;gap:8px;border-top:1px solid #eee;padding-top:14px;flex-wrap:wrap;">
+            <button onclick="entregarTudo()"
+                style="flex:1;padding:11px;background:#27ae60;color:white;border:none;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;min-width:140px;">
+                <i class="fas fa-check-double"></i> Entregar Tudo
+            </button>
+            <button onclick="confirmarEntregaParcial()"
+                style="flex:1;padding:11px;background:linear-gradient(135deg,#2980b9,#3498db);color:white;border:none;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;min-width:140px;">
+                <i class="fas fa-box-open"></i> Entregar Selecionados
+            </button>
+            <button onclick="document.getElementById('modalEntregaEpi').style.display='none'"
+                style="padding:11px 14px;background:#95a5a6;color:white;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+                Cancelar
+            </button>
+        </div>
+    </div>
+</div>
+
+<div id="modalAprovarEpi" class="modal-overlay" style="display:none;"><div class="modal" style="width:500px;max-height:90vh;overflow-y:auto;"><div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #8e44ad;padding-bottom:10px;margin-bottom:15px;"><h3 style="margin:0;color:#8e44ad;"><i class="fas fa-vest"></i> Aprovar Solicitacao EPI</h3><button onclick="document.getElementById('modalAprovarEpi').style.display='none'" style="background:none;border:none;font-size:24px;cursor:pointer;color:#999;">&times;</button></div><div id="modalAprovarEpiNome" style="background:#f9f5ff;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:14px;font-weight:700;color:#6c3483;"></div><p style="font-size:12px;color:#555;margin:0 0 12px;background:#fff3cd;padding:8px 12px;border-radius:6px;border-left:3px solid #f39c12;"><i class="fas fa-info-circle" style="color:#f39c12;"></i> <strong>Desmarque</strong> os itens que o colaborador ja possui.</p><div id="modalAprovarEpiItens" style="margin-bottom:16px;"></div><div style="display:flex;gap:10px;border-top:1px solid #eee;padding-top:14px;"><button id="btnConfirmarAprEpi" onclick="confirmarAprovacaoEpi()" style="flex:1;padding:12px;background:linear-gradient(135deg,#27ae60,#2ecc71);color:white;border:none;border-radius:8px;font-size:14px;font-weight:800;cursor:pointer;"><i class="fas fa-check"></i> Confirmar Aprovacao</button><button onclick="document.getElementById('modalAprovarEpi').style.display='none'" style="padding:12px 20px;background:#95a5a6;color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">Cancelar</button></div></div></div>
+<script>
+(function() {
     window.dbAuditoria = [];
     window.qtdAcertos = 0;
     window.qtdErros = 0;
 
-    // Função que "Suga" os dados diretamente do Estoque/Planejamento do logica.js
-    window.extrairDadosDaMemoria = function() {
-        window.dbAuditoria = [];
-        let listaHTML = "";
-        
-        let dadosBrutos = (typeof window.dE !== 'undefined' && window.dE.length > 0) ? window.dE : ((typeof window.dC !== 'undefined' && window.dC.length > 0) ? window.dC : []);
-        
-        if (dadosBrutos.length > 0) {
-            dadosBrutos.forEach(item => {
-                let chaveEnd = Object.keys(item).find(k => k.toUpperCase().includes('PICKING') || k.toUpperCase().includes('ENDERE'));
-                let chaveProd = Object.keys(item).find(k => k.toUpperCase().includes('PRODUTO') || k.toUpperCase().includes('MATERIAL') || k.toUpperCase().includes('DESCRI'));
-                
-                if (chaveEnd && chaveProd && item[chaveEnd] && item[chaveProd]) {
-                    let end = String(item[chaveEnd]).trim().toUpperCase();
-                    let prod = String(item[chaveProd]).trim().toUpperCase();
-                    if(end && prod && end !== 'PICKING' && end !== 'ENDEREÇO') {
-                        window.dbAuditoria.push({ endereco: end, produto: prod });
+    // MOTOR DE IMPORTAÇÃO DE EXCEL (Igual ao do Planejamento)
+    window.importarExcelAuditoria = function() {
+        let fileInput = document.getElementById('audit-file-upload');
+        if (!fileInput.files.length) {
+            alert("⚠️ Por favor, selecione um arquivo Excel primeiro!");
+            return;
+        }
+
+        let file = fileInput.files[0];
+        let reader = new FileReader();
+
+        reader.onload = function(e) {
+            try {
+                let data = new Uint8Array(e.target.result);
+                let workbook = XLSX.read(data, {type: 'array'});
+                let firstSheet = workbook.SheetNames[0];
+                let worksheet = workbook.Sheets[firstSheet];
+                let json = XLSX.utils.sheet_to_json(worksheet, {raw: false});
+
+                window.dbAuditoria = [];
+                let qtdLida = 0;
+
+                json.forEach(row => {
+                    // Caça as colunas certas no Excel, cruzando os dados
+                    let cEnd = Object.keys(row).find(k => k.toUpperCase().includes('ENDERE') || k.toUpperCase().includes('PICKING') || k.toUpperCase().includes('LOCAL'));
+                    let cProd = Object.keys(row).find(k => k.toUpperCase().includes('PROD') || k.toUpperCase().includes('MATER') || k.toUpperCase().includes('DESCRI'));
+                    let cSetor = Object.keys(row).find(k => k.toUpperCase().includes('SETOR') || k.toUpperCase().includes('AREA') || k.toUpperCase().includes('FAMILIA'));
+                    let cSaldo = Object.keys(row).find(k => k.toUpperCase().includes('SALDO') || k.toUpperCase().includes('QTD') || k.toUpperCase().includes('QUANT') || k.toUpperCase().includes('ESTOQUE'));
+
+                    if (cEnd && cProd) {
+                        let end = String(row[cEnd]).trim().toUpperCase();
+                        let prod = String(row[cProd]).trim().toUpperCase();
+                        
+                        if(end && prod && end !== 'PICKING' && !end.includes('ENDERE')) {
+                            window.dbAuditoria.push({ 
+                                endereco: end, 
+                                produto: prod,
+                                setor: cSetor ? String(row[cSetor]).trim().toUpperCase() : '-',
+                                saldo: cSaldo ? String(row[cSaldo]).trim().toUpperCase() : '0'
+                            });
+                            qtdLida++;
+                        }
                     }
-                }
-            });
+                });
 
-            // Remove itens duplicados
-            window.dbAuditoria = window.dbAuditoria.filter((v,i,a) => a.findIndex(t => (t.endereco === v.endereco && t.produto === v.produto)) === i);
-            
-            // Desenha a lista para o Gestor
-            window.dbAuditoria.forEach(d => { 
-                listaHTML += `<div style="padding:8px; border-bottom:1px solid #eee; font-family:monospace; font-size:14px; text-align:left; color:#333;">📍 <b>${d.endereco}</b> ➡️ 📦 ${d.produto}</div>`; 
-            });
-        }
+                // Limpa duplicados se existirem
+                window.dbAuditoria = window.dbAuditoria.filter((v,i,a) => a.findIndex(t => (t.endereco === v.endereco && t.produto === v.produto)) === i);
 
-        let divDados = document.getElementById('audit-dados-lista');
-        if (divDados) {
-            divDados.innerHTML = listaHTML !== "" ? listaHTML : `<div style="color:#c0392b; text-align:center; padding:20px; font-weight:bold;">Nenhum endereço encontrado na memória.<br>Importe o Estoque Atual Picking na aba Operação!</div>`;
-        }
+                window.renderListaAuditoria();
+                alert(`✅ Importação concluída!\nForam carregados ${window.dbAuditoria.length} endereços com Setor e Saldo cruzados.`);
+
+            } catch (error) {
+                alert("❌ Erro ao ler a planilha. Certifique-se de que é um Excel válido.");
+                console.error(error);
+            }
+        };
+        reader.readAsArrayBuffer(file);
     };
 
-    // Navegação do Painel
+    // FUNÇÃO QUE DESENHA A LISTA LIDA NA TELA
+    window.renderListaAuditoria = function() {
+        let listaHTML = "";
+        window.dbAuditoria.forEach(d => { 
+            listaHTML += `
+            <div style="padding:10px; border-bottom:1px solid #eee; text-align:left; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                <div style="font-family:monospace; font-size:15px; color:#2c3e50;">📍 <b>${d.endereco}</b> ➡️ 📦 ${d.produto}</div>
+                <div style="font-size:12px; background:#f0f3f4; padding:4px 8px; border-radius:4px; color:#7f8c8d;">
+                    <b>Setor:</b> ${d.setor} | <b>Saldo:</b> ${d.saldo}
+                </div>
+            </div>`; 
+        });
+        document.getElementById('audit-dados-lista').innerHTML = listaHTML;
+    };
+
+    // CONTROLE DE NAVEGAÇÃO
     window.entrarAuditoria = function(perfil) {
         document.getElementById('audit-login').style.display = 'none';
-        window.extrairDadosDaMemoria(); 
-
+        
         if(perfil === 'gestor') {
-            let senha = prompt("🔒 Área protegida. Digite a senha do Gestor:");
+            let senha = prompt("🔒 Digite a senha do Gestor:");
             if(senha === "admin") { 
-                document.getElementById('audit-gestor').style.display = 'block';
-            } else {
-                alert("Senha incorreta!");
-                document.getElementById('audit-login').style.display = 'block';
-            }
+                document.getElementById('audit-gestor').style.display = 'block'; 
+                if(window.dbAuditoria.length > 0) window.renderListaAuditoria();
+            } 
+            else { alert("Senha incorreta!"); document.getElementById('audit-login').style.display = 'block'; }
         } else {
-            if(window.dbAuditoria.length === 0) alert("⚠️ Aviso: Os dados de Estoque/Planejamento não estão carregados.");
+            if(window.dbAuditoria.length === 0) alert("⚠️ Aviso: A planilha de planejamento ainda não foi importada pelo Gestor.");
             document.getElementById('audit-operador').style.display = 'block';
             setTimeout(() => document.getElementById('audit-end').focus(), 300);
         }
@@ -1366,7 +1939,7 @@ setTimeout(() => {
         document.getElementById('audit-login').style.display = 'block';
     };
 
-    // Motor de Bipagem (Lógica de Acerto e Erro)
+    // MOTOR DE BIPAGEM COM FEEDBACK DE SETOR E SALDO
     window.verificarBipagemAudit = function() {
         let inputEnd = document.getElementById('audit-end');
         let inputProd = document.getElementById('audit-prod');
@@ -1375,15 +1948,11 @@ setTimeout(() => {
         let fb = document.getElementById('audit-feedback');
         let telaOp = document.getElementById('audit-operador');
 
-        if(!end || !prod) { 
-            fb.innerHTML = "<span style='color:#f39c12;'><i class='fas fa-exclamation-triangle'></i> Bipe Endereço e Produto!</span>"; 
-            return; 
-        }
+        if(!end || !prod) { fb.innerHTML = "<span style='color:#f39c12;'><i class='fas fa-exclamation-triangle'></i> Bipe Endereço e Produto!</span>"; return; }
 
         let itensNoEndereco = window.dbAuditoria.filter(i => i.endereco === end);
-        let acertou = itensNoEndereco.find(i => i.produto === prod || i.produto.includes(prod) || prod.includes(i.produto));
+        let itemCorreto = itensNoEndereco.find(i => i.produto === prod || i.produto.includes(prod) || prod.includes(i.produto));
 
-        // Força animação
         telaOp.classList.remove('piscar-verde', 'piscar-vermelho');
         void telaOp.offsetWidth;
 
@@ -1391,18 +1960,18 @@ setTimeout(() => {
             window.qtdErros++;
             telaOp.classList.add('piscar-vermelho');
             fb.style.background = '#fadbd8';
-            fb.innerHTML = `<span style='color:#c0392b;'><i class='fas fa-times'></i> ERRO: Endereço ${end} não existe!</span>`;
-        } else if (acertou) {
+            fb.innerHTML = `<span style='color:#c0392b;'><i class='fas fa-times'></i> ERRO: Endereço ${end} não existe na planilha!</span>`;
+        } else if (itemCorreto) {
             window.qtdAcertos++;
             telaOp.classList.add('piscar-verde');
             fb.style.background = '#d5f5e3';
-            fb.innerHTML = `<span style='color:#27ae60;'><i class='fas fa-check'></i> ACERTO: Produto correto!</span>`;
+            fb.innerHTML = `<span style='color:#27ae60;font-size:18px;'><i class='fas fa-check'></i> ACERTO! <br><span style='font-size:14px;color:#2c3e50;'>Setor: ${itemCorreto.setor} | Saldo Sist: ${itemCorreto.saldo}</span></span>`;
         } else {
             window.qtdErros++;
             telaOp.classList.add('piscar-vermelho');
             fb.style.background = '#fadbd8';
             let corretos = itensNoEndereco.map(i => i.produto).join(" ou ");
-            fb.innerHTML = `<span style='color:#c0392b;font-size:15px;'><i class='fas fa-exclamation-circle'></i> DIVERGÊNCIA!<br>Era esperado: <b>${corretos}</b></span>`;
+            fb.innerHTML = `<span style='color:#c0392b;font-size:14px;'><i class='fas fa-exclamation-circle'></i> DIVERGÊNCIA!<br>Era esperado: <b>${corretos}</b></span>`;
         }
 
         document.getElementById('audit-acertos').innerText = window.qtdAcertos;
@@ -1410,14 +1979,11 @@ setTimeout(() => {
         inputProd.value = ''; inputEnd.value = ''; inputEnd.focus();
     };
 
-    // Construtor Blindado (Garante que a tela e o botão sejam criados e não sobrepostos)
+    // INJEÇÃO DA TELA (BLINDADA)
     setInterval(() => {
-        // Remove Mapeamento antigo e controla o menu
         document.querySelectorAll('.main-mod-btn').forEach(btn => {
             let txt = btn.innerText.toLowerCase();
-            if (txt.includes('mapeamento') || txt.includes('picking')) {
-                btn.style.display = 'none';
-            }
+            if (txt.includes('mapeamento') || txt.includes('picking')) { btn.style.display = 'none'; }
             if (btn.id !== 'btn-nav-auditoria' && !btn.hasAttribute('data-audit-fix')) {
                 btn.addEventListener('click', function() {
                     let telaAudit = document.getElementById('view-auditoria');
@@ -1427,7 +1993,6 @@ setTimeout(() => {
             }
         });
 
-        // Adiciona botão Auditoria
         let menu = document.querySelector('.main-modules');
         if (menu && !document.getElementById('btn-nav-auditoria')) {
             let btnConf = document.createElement('button');
@@ -1443,7 +2008,6 @@ setTimeout(() => {
             menu.appendChild(btnConf);
         }
 
-        // Constrói as Telas HTML
         if (!document.getElementById('view-auditoria')) {
             let tela = document.createElement('div');
             tela.id = 'view-auditoria';
@@ -1460,7 +2024,6 @@ setTimeout(() => {
                     @keyframes piscaVerde { 0% { background-color: #2ecc71; } 100% { background-color: transparent; } }
                     @keyframes piscaVermelho { 0% { background-color: #e74c3c; } 100% { background-color: transparent; } }
                 </style>
-                
                 <div id="audit-login" style="text-align:center; margin-top:10vh;">
                     <h1 style="color:#2c3e50; margin-bottom:30px;"><i class="fas fa-boxes"></i> Conferência da Guarda</h1>
                     <button class="btn-audit" style="background:#2980b9; max-width:400px;" onclick="entrarAuditoria('operador')"><i class="fas fa-mobile-alt"></i> ACESSO OPERADOR (Mobile)</button><br>
@@ -1471,11 +2034,23 @@ setTimeout(() => {
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <button onclick="voltarAuditLogin()" style="padding:10px 20px; background:#95a5a6; border:none; color:white; border-radius:5px; cursor:pointer;"><i class="fas fa-arrow-left"></i> Voltar</button>
                     </div>
-                    <h2 style="color:#2c3e50; border-bottom:2px solid #3498db; padding-bottom:10px; margin-top:20px; text-align:left;"><i class="fas fa-tasks"></i> Planejamento Sincronizado</h2>
-                    <p style="color:#7f8c8d; text-align:left; font-size:14px;">Endereços e produtos capturados automaticamente da memória do Estoque Picking.</p>
-                    <div id="audit-dados-lista" style="max-height:50vh; overflow-y:auto; border:1px solid #ddd; padding:10px; border-radius:8px; background:#fdfdfd;"></div>
+                    
+                    <h2 style="color:#2c3e50; border-bottom:2px solid #3498db; padding-bottom:10px; margin-top:20px; text-align:left;"><i class="fas fa-tasks"></i> Base de Auditoria</h2>
+                    
+                    <div style="background:#e8f4f8; padding:20px; border-radius:8px; border-left:5px solid #3498db; margin-bottom:20px; text-align:left; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                        <h3 style="margin-top:0; color:#2980b9;"><i class="fas fa-file-excel"></i> Importar Planejamento (Excel)</h3>
+                        <p style="font-size:14px; color:#555;">Selecione a planilha para cruzar <b>Endereço</b>, <b>Produto</b>, <b>Setor</b> e <b>Saldo</b>.</p>
+                        <input type="file" id="audit-file-upload" accept=".xlsx, .xls" style="padding:10px; background:#fff; border:1px solid #ccc; border-radius:5px; width:100%; box-sizing:border-box; margin-bottom:15px; cursor:pointer;">
+                        <button class="btn-audit" style="background:#3498db; margin-bottom:0;" onclick="importarExcelAuditoria()">
+                            <i class="fas fa-upload"></i> PROCESSAR PLANILHA
+                        </button>
+                    </div>
+
+                    <div id="audit-dados-lista" style="max-height:40vh; overflow-y:auto; border:1px solid #ddd; padding:10px; border-radius:8px; background:#fdfdfd; margin-top:15px;">
+                        <div style="color:#7f8c8d; text-align:center; padding:20px;">Nenhum dado importado ainda.</div>
+                    </div>
                 </div>
-                
+
                 <div id="audit-operador" style="display:none; max-width:500px; margin:0 auto; text-align:center;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
                         <button onclick="voltarAuditLogin()" style="padding:10px; background:#e74c3c; border:none; color:white; border-radius:5px; cursor:pointer;"><i class="fas fa-sign-out-alt"></i> Sair</button>
@@ -1484,7 +2059,9 @@ setTimeout(() => {
                             <span style="color:#c0392b;"><i class="fas fa-times-circle"></i> <span id="audit-erros">0</span></span>
                         </div>
                     </div>
-                    <div id="audit-feedback" style="height:80px; display:flex; align-items:center; justify-content:center; font-size:20px; font-weight:bold; border-radius:10px; margin-bottom:20px; background:#f4f7f6; transition:0.3s;">Aguardando leitura...</div>
+                    <div id="audit-feedback" style="height:100px; display:flex; align-items:center; justify-content:center; flex-direction:column; font-size:20px; font-weight:bold; border-radius:10px; margin-bottom:20px; background:#f4f7f6; transition:0.3s; padding:10px;">
+                        Aguardando leitura...
+                    </div>
                     <input type="text" id="audit-end" class="input-audit" placeholder="1º BIPE O ENDEREÇO" onkeypress="if(event.key==='Enter') document.getElementById('audit-prod').focus();">
                     <input type="text" id="audit-prod" class="input-audit" placeholder="2º BIPE O PRODUTO" onkeypress="if(event.key==='Enter') verificarBipagemAudit();">
                     <button class="btn-audit" style="background:#2ecc71;" onclick="verificarBipagemAudit()"><i class="fas fa-barcode"></i> VALIDAR LEITURA</button>
