@@ -1807,30 +1807,28 @@ window.switchTab = function(el, tab, cls) {
 };
 
 // ============================
-// AUTO SAVE
+// AUTO SAVE (CORRIGIDO PARA A NUVEM)
 // ============================
 let saveTimer;
 window.autoSave = function() {
     clearTimeout(saveTimer);
-
     saveTimer = setTimeout(() => {
-        if (window.currentModule === 'operacao') saveDataSafe("operacao", window.dadosOperacao);
-        if (window.currentModule === 'rh') saveDataSafe("rh", window.dadosRH);
-        if (window.currentModule === 'auditoria') saveDataSafe("auditoria", window.dadosAuditoria);
-
-        console.log("💾 AUTO SAVE");
+        if (window.currentModule === 'operacao' && typeof window.dadosOperacao !== 'undefined') saveDataSafe("operacao", window.dadosOperacao);
+        
+        // CORREÇÃO: Usar a "caixa" dadosRH para o Google Cloud aceitar
+        if (window.currentModule === 'rh' && typeof window.dadosRH !== 'undefined') saveDataSafe("rh", window.dadosRH);
+        
+        if (window.currentModule === 'auditoria' && typeof window.dbAuditoria !== 'undefined') saveDataSafe("auditoria", window.dbAuditoria);
+        console.log("💾 AUTO SAVE SEGURO CONCLUÍDO");
     }, 1500);
 };
 
-// ============================
 // GARANTIA AO SAIR
-// ============================
 window.addEventListener('beforeunload', () => {
-    if (window.currentModule === 'operacao') saveDataSafe("operacao", window.dadosOperacao);
-    if (window.currentModule === 'rh') saveDataSafe("rh", window.dadosRH);
-    if (window.currentModule === 'auditoria') saveDataSafe("auditoria", window.dadosAuditoria);
+    if (window.currentModule === 'operacao' && typeof window.dadosOperacao !== 'undefined') saveDataSafe("operacao", window.dadosOperacao);
+    if (window.currentModule === 'rh' && typeof window.dadosRH !== 'undefined') saveDataSafe("rh", window.dadosRH);
+    if (window.currentModule === 'auditoria' && typeof window.dbAuditoria !== 'undefined') saveDataSafe("auditoria", window.dbAuditoria);
 });
-
 </script>
 
 <!-- COMO USAR (OBRIGATÓRIO):
