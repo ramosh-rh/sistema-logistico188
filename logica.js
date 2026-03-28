@@ -2496,11 +2496,14 @@ window.subTabAbs = function(aba) {
 // ================================================================
 // MÓDULO AUDITORIA — Conferência de Inventário
 // ================================================================
-var _auditDB        = [];   // {endereco, ean, produto} from imports
-var _auditEnderecoDB= [];   // localizadores from picking import
-var _auditSessoes   = [];   // histórico de sessões (Firebase)
-var _auditSessaoAtual = null; // sessão em curso
-var _auditBipState  = 'end'; // 'end' ou 'prod'
+var _auditDB        = [];   // {endereco, produto, ean, desc, saldo}
+var _auditEnderecoDB= [];   // localizadores do inventário de picking
+var _auditMapProdEnd= {};   // produto -> endereço correto
+var _auditMapEanEnd = {};   // ean -> endereço correto
+var _auditMapEndProd= {};   // endereço -> produto esperado
+var _auditSessoes   = [];
+var _auditSessaoAtual = null;
+var _auditBipState  = 'end';
 var _auditEndLido   = '';
 
 // ── Importar Estoque Guarda (EAN) ─────────────────────────────
@@ -2508,32 +2511,57 @@ window.importarEstoqueGuarda = async function(input) {
     var file = input.files[0]; if(!file) return;
     try {
         var rows = await _auditLerXLSX(file);
-        // Detecta colunas: endereço/localizador, produto/código, ean/código de barras
-        var dados = rows.map(function(r) {
+        var dados = [];
+        rows.forEach(function(r) {
             var keys = Object.keys(r);
             function col() {
-                for(var i=0;i<arguments.length;i++) {
+                // Try exact match first, then partial
+                for(var a=0;a<arguments.length;a++) {
+                    var arg = arguments[a].toLowerCase().replace(/[\s_\-]/g,'');
                     for(var j=0;j<keys.length;j++) {
-                        if(keys[j].toLowerCase().replace(/[\s_]/g,'').includes(arguments[i].toLowerCase().replace(/[\s_]/g,'')))
-                            return String(r[keys[j]]||'').trim();
+                        var k = keys[j].toLowerCase().replace(/[\s_\-]/g,'');
+                        if(k===arg) return String(r[keys[j]]||'').trim();
+                    }
+                }
+                for(var a=0;a<arguments.length;a++) {
+                    var arg = arguments[a].toLowerCase().replace(/[\s_\-]/g,'');
+                    for(var j=0;j<keys.length;j++) {
+                        var k = keys[j].toLowerCase().replace(/[\s_\-]/g,'');
+                        if(k.includes(arg)||arg.includes(k)) return String(r[keys[j]]||'').trim();
                     }
                 }
                 return '';
             }
-            return {
-                endereco: col('endereço','endereco','localizador','local','end'),
-                produto:  col('produto','codigo','cod','material','sku','item'),
-                ean:      col('ean','codbarras','barcode','codigodebarras','codbarra','gtin')
-            };
-        }).filter(function(r){ return r.endereco||r.produto||r.ean; });
-
+            var end  = col('picking','endereço','endereco','localizador','local','end');
+            var prod = col('produto','codigo','cod','material','sku','item');
+            var ean  = col('ean','codbarras','barcode','codigodebarras','codbarra','gtin');
+            var desc = col('descricao','descrição','desc','nome');
+            var saldo = col('saldo','qtd','quantidade','estoque');
+            if(!end || end==='XXX-XX-XX') return; // Produto sem endereço válido
+            if(!prod && !ean) return;
+            dados.push({ endereco: end.toUpperCase(), produto: String(prod).toUpperCase(), ean: String(ean).toUpperCase(), desc: desc, saldo: saldo });
+        });
+        // Eliminar duplicados (mesmo endereço + produto)
+        var visto = {};
+        dados = dados.filter(function(d){
+            var k = d.endereco+'|'+d.produto;
+            if(visto[k]) return false;
+            visto[k] = true; return true;
+        });
         _auditDB = dados;
+        // Construir mapa produto->endereço_correto e mapa ean->endereço_correto
+        _auditMapProdEnd = {};
+        _auditMapEanEnd  = {};
+        dados.forEach(function(d){
+            if(d.produto) _auditMapProdEnd[d.produto] = d.endereco;
+            if(d.ean)     _auditMapEanEnd[d.ean]      = d.endereco;
+        });
         try { await window.saveToDB('audit_estoque_guarda', {data: dados, ts: Date.now(), arquivo: file.name}); } catch(e){}
         var el = document.getElementById('status-estoque-guarda');
-        if(el) el.innerHTML = '<span style="color:#27ae60;font-weight:700;">✅ '+dados.length+' itens importados — '+file.name+'</span>';
+        if(el) el.innerHTML = '<span style="color:#27ae60;font-weight:700;">✅ '+dados.length+' itens com endereço — '+file.name+'</span>';
         auditGestorRefresh();
-        showToast('✅ Estoque Guarda: '+dados.length+' itens importados!', 'success');
-    } catch(e) { alert('Erro: '+e.message); }
+        if(typeof showToast==='function') showToast('✅ Estoque Guarda: '+dados.length+' itens importados!', 'success');
+    } catch(e) { alert('Erro ao importar estoque: '+e.message); }
     input.value='';
 };
 
@@ -2542,27 +2570,44 @@ window.importarEnderecosPicking = async function(input) {
     var file = input.files[0]; if(!file) return;
     try {
         var rows = await _auditLerXLSX(file);
-        var enderecos = rows.map(function(r) {
+        // Colunas do arquivo: Produto, Descrição, TipoLocal, CódLocalizador, Corredor, Modulo, Box, Ativo, Localizador, Setor, NomeSetor, Saldo
+        var enderecos = [];
+        rows.forEach(function(r) {
             var keys = Object.keys(r);
             function col() {
-                for(var i=0;i<arguments.length;i++) {
+                for(var a=0;a<arguments.length;a++) {
+                    var arg = arguments[a].toLowerCase().replace(/[\s_\-\.]/g,'');
                     for(var j=0;j<keys.length;j++) {
-                        if(keys[j].toLowerCase().replace(/[\s_]/g,'').includes(arguments[i].toLowerCase().replace(/[\s_]/g,'')))
-                            return String(r[keys[j]]||'').trim().toUpperCase();
+                        var k = keys[j].toLowerCase().replace(/[\s_\-\.]/g,'');
+                        if(k===arg) return String(r[keys[j]]||'').trim().toUpperCase();
+                    }
+                }
+                for(var a=0;a<arguments.length;a++) {
+                    var arg = arguments[a].toLowerCase().replace(/[\s_\-\.]/g,'');
+                    for(var j=0;j<keys.length;j++) {
+                        var k = keys[j].toLowerCase().replace(/[\s_\-\.]/g,'');
+                        if(k.includes(arg)||arg.includes(k)) return String(r[keys[j]]||'').trim().toUpperCase();
                     }
                 }
                 return '';
             }
-            return col('endereço','localizador','endereco','local','codigo','cod','rua','posição','posicao','posicao');
-        }).filter(Boolean);
-
-        _auditEnderecoDB = [...new Set(enderecos)]; // unique
-        try { await window.saveToDB('audit_enderecos_picking', {data: _auditEnderecoDB, ts: Date.now(), arquivo: file.name}); } catch(e){}
+            var loc = col('localizador','endereco','endereço','local','codigo','picking','rua','posicao','posição','codlocalizador');
+            var prod = col('produto','codigo','cod','material','sku');
+            var desc = col('descrição','descricao','desc','nome');
+            var saldo = col('saldo','qtd','quantidade');
+            if(loc) enderecos.push({ endereco: loc, produto: String(prod||'').toUpperCase(), desc: desc, saldo: saldo });
+        });
+        // Unique endereços
+        _auditEnderecoDB = [...new Set(enderecos.map(function(e){return e.endereco;}))];
+        // Mapa localiz -> produto esperado (para cross-reference)
+        _auditMapEndProd = {};
+        enderecos.forEach(function(e){ if(e.endereco) _auditMapEndProd[e.endereco] = { produto: e.produto, desc: e.desc, saldo: e.saldo }; });
+        try { await window.saveToDB('audit_enderecos_picking', {data: _auditEnderecoDB, mapa: _auditMapEndProd, ts: Date.now(), arquivo: file.name}); } catch(e){}
         var el = document.getElementById('status-enderecos-picking');
         if(el) el.innerHTML = '<span style="color:#8e44ad;font-weight:700;">✅ '+_auditEnderecoDB.length+' endereços importados — '+file.name+'</span>';
         auditGestorRefresh();
-        showToast('✅ Endereços Picking: '+_auditEnderecoDB.length+' localizadores!', 'success');
-    } catch(e) { alert('Erro: '+e.message); }
+        if(typeof showToast==='function') showToast('✅ Endereços Picking: '+_auditEnderecoDB.length+' localizadores!', 'success');
+    } catch(e) { alert('Erro ao importar endereços: '+e.message); }
     input.value='';
 };
 
@@ -2587,14 +2632,24 @@ window.auditIniciarSessao = function() {
     var tipo  = document.getElementById('audit-tipo-tarefa').value;
     if(!nome) { alert('Informe seu nome ou matrícula.'); return; }
 
-    // Carrega dados do Firebase se não tiver em memória
+    // Carrega dados do IndexedDB se não tiver em memória
     if(!_auditDB.length && !_auditEnderecoDB.length) {
         Promise.all([
-            window.getFromDB('audit_estoque_guarda').catch(()=>null),
-            window.getFromDB('audit_enderecos_picking').catch(()=>null)
+            window.getFromDB('audit_estoque_guarda').catch(function(){return null;}),
+            window.getFromDB('audit_enderecos_picking').catch(function(){return null;})
         ]).then(function(results) {
-            if(results[0]&&results[0].data) _auditDB = results[0].data;
-            if(results[1]&&results[1].data) _auditEnderecoDB = results[1].data;
+            if(results[0]&&results[0].data) {
+                _auditDB = results[0].data;
+                _auditMapProdEnd={}; _auditMapEanEnd={};
+                _auditDB.forEach(function(d){
+                    if(d.produto) _auditMapProdEnd[d.produto]=d.endereco;
+                    if(d.ean)     _auditMapEanEnd[d.ean]=d.endereco;
+                });
+            }
+            if(results[1]&&results[1].data) {
+                _auditEnderecoDB = results[1].data;
+                if(results[1].mapa) _auditMapEndProd = results[1].mapa;
+            }
             _auditIniciarSessaoInterno(nome, tipo);
         });
     } else {
@@ -2662,77 +2717,133 @@ window.auditBipEnd = function() {
     if(prodInput) { prodInput.disabled=false; prodInput.value=''; prodInput.focus(); }
 };
 
-// ── Bip Produto e Validação ────────────────────────────────────
+// ── Bip Produto e Validação (com cruzamento inteligente) ──────────────────
 window.auditBipProd = function() {
     if(_auditBipState === 'end') { auditBipEnd(); return; }
     var endInput  = document.getElementById('audit-end');
     var prodInput = document.getElementById('audit-prod');
-    var fb        = document.getElementById('audit-feedback');
+    var fbMain    = document.getElementById('audit-fb-main') || document.getElementById('audit-feedback');
+    var fbEndCorr = document.getElementById('audit-fb-endereco-correto');
+    var fbBox     = document.getElementById('audit-feedback');
     var end  = _auditEndLido;
     var prod = (prodInput.value||'').trim().toUpperCase();
 
     if(!end)  { alert('Bipe o endereço primeiro.'); return; }
-    if(!prod) { fb.textContent='⚠️ Bipe o produto!'; return; }
+    if(!prod) {
+        if(fbMain) fbMain.textContent='⚠️ Bipe o produto!';
+        if(fbEndCorr) fbEndCorr.style.display='none';
+        return;
+    }
 
-    // Verifica na base
-    var itensNoEndereco = _auditDB.filter(function(i){ return (i.endereco||'').toUpperCase()===end; });
-    var acertou = itensNoEndereco.find(function(i){
-        var p = (i.produto||'').toUpperCase();
-        var e = (i.ean||'').toUpperCase();
-        return p===prod||e===prod||p.includes(prod)||prod.includes(p);
+    // Ocultar endereço correto por padrão
+    if(fbEndCorr) fbEndCorr.style.display='none';
+
+    var hora  = new Date().toLocaleTimeString('pt-BR');
+    var status, logClass, fbTxt, fbBg, endCorreto='', descProd='';
+
+    // ─── Estratégia de validação ──────────────────────────────────────────
+    // 1. Buscar todos os itens que estão neste endereço segundo o estoque
+    var itensNoEndereco = _auditDB.filter(function(i){
+        return (i.endereco||'').toUpperCase() === end;
     });
 
-    var agora = new Date();
-    var hora  = agora.toLocaleTimeString('pt-BR');
-    var status, logClass, fbTxt, fbBg;
+    // 2. Verificar se o produto bipado está NESTE endereço
+    var acertou = itensNoEndereco.find(function(i){
+        return i.produto===prod || i.ean===prod ||
+               (i.produto&&i.produto.includes(prod)) ||
+               (prod.length>=6&&prod.includes(i.produto||''));
+    });
 
-    if(_auditEnderecoDB.length && !_auditEnderecoDB.includes(end) && !itensNoEndereco.length) {
+    // 3. Se não acertou, descobrir ONDE esse produto deveria estar
+    if(!acertou) {
+        endCorreto = _auditMapProdEnd[prod] || _auditMapEanEnd[prod] || '';
+        if(!endCorreto && _auditDB.length) {
+            var regProd = _auditDB.find(function(i){
+                return i.produto===prod || i.ean===prod ||
+                       (i.produto&&i.produto.includes(prod)) ||
+                       (prod.length>=6&&i.ean&&i.ean.includes(prod));
+            });
+            if(regProd) { endCorreto = regProd.endereco; descProd = regProd.desc||''; }
+        }
+    }
+
+    // 4. Verificar se o endereço existe no inventário
+    var endExiste = _auditEnderecoDB.length===0 || _auditEnderecoDB.indexOf(end)>=0 || itensNoEndereco.length>0;
+
+    // ─── Determinar status ────────────────────────────────────────────────
+    if(!endExiste && !itensNoEndereco.length) {
         status='nao-encontrado'; logClass='audit-log-warn'; fbBg='#fff3cd';
-        fbTxt='⚠️ Endereço '+end+' não encontrado nos localizadores.';
+        fbTxt='⚠️ Endereço '+end+' não está no inventário.';
         window.qtdErros++;
     } else if(itensNoEndereco.length===0) {
         status='nao-encontrado'; logClass='audit-log-warn'; fbBg='#fff3cd';
-        fbTxt='⚠️ Endereço '+end+' sem registros na base.';
+        fbTxt='⚠️ Endereço '+end+' sem produtos no estoque.';
         window.qtdErros++;
     } else if(acertou) {
         status='acerto'; logClass='audit-log-ok'; fbBg='#d5f5e3';
-        fbTxt='✅ CORRETO — '+end+' / '+(acertou.produto||prod);
+        var desc = acertou.desc ? ' — '+acertou.desc.substring(0,30) : '';
+        fbTxt='✅ CORRETO! '+end+desc;
         window.qtdAcertos++;
     } else {
+        // DIVERGÊNCIA: produto no endereço errado
         status='divergencia'; logClass='audit-log-err'; fbBg='#fadbd8';
-        var esperados = itensNoEndereco.map(function(i){return i.produto||i.ean;}).join(', ');
-        fbTxt='❌ DIVERGÊNCIA! Esperado: '+esperados;
+        var esperados = itensNoEndereco.slice(0,2).map(function(i){return i.produto||i.ean;}).join(' / ');
+        fbTxt='❌ PRODUTO FORA DO LUGAR! Esperado: '+esperados;
+        if(endCorreto) {
+            fbTxt='❌ PRODUTO NO ENDEREÇO ERRADO!';
+            // Mostrar endereço correto em destaque
+            if(fbEndCorr) {
+                fbEndCorr.style.display='block';
+                fbEndCorr.textContent='📍 ENDEREÇO CORRETO: '+endCorreto+(descProd?' ('+descProd.substring(0,25)+')':'');
+            }
+        }
         window.qtdErros++;
     }
 
-    fb.innerHTML = fbTxt; fb.style.background=fbBg;
+    // ─── Atualizar UI ─────────────────────────────────────────────────────
+    if(fbMain)   { fbMain.textContent=fbTxt; }
+    else if(fbBox){ fbBox.textContent=fbTxt; }
+    if(fbBox)    fbBox.style.background=fbBg;
     document.getElementById('audit-acertos').textContent=window.qtdAcertos;
     document.getElementById('audit-erros').textContent=window.qtdErros;
 
-    // Log
-    var logEl = document.getElementById('audit-log');
-    var newItem = document.createElement('div');
-    newItem.className='audit-log-item '+logClass;
-    newItem.innerHTML='<span style="min-width:55px;opacity:.7;">'+hora+'</span>'+
-        '<span style="font-family:monospace;font-weight:800;">'+end+'</span>'+
-        '<span style="opacity:.7;">→</span>'+
-        '<span>'+prod+'</span>'+
-        '<span style="margin-left:auto;font-size:10px;opacity:.8;">'+fbTxt.replace(/<[^>]*>/g,'').substring(0,20)+'</span>';
-    logEl.insertBefore(newItem, logEl.firstChild);
+    // ─── Beep visual feedback ─────────────────────────────────────────────
+    if(status==='acerto') {
+        fbBox&&fbBox.animate&&fbBox.animate([{transform:'scale(1)'},{transform:'scale(1.04)'},{transform:'scale(1)'}],{duration:200});
+    }
 
-    // Salva apontamento
+    // ─── Log visual ──────────────────────────────────────────────────────
+    var logEl = document.getElementById('audit-log');
+    if(logEl) {
+        var icons = {'acerto':'✅','divergencia':'❌','nao-encontrado':'⚠️'};
+        var div = document.createElement('div');
+        div.className='audit-log-item '+logClass;
+        var extra = (endCorreto && status==='divergencia') ? '<span style="color:#e74c3c;font-size:9px;font-weight:800;">→'+endCorreto+'</span>' : '';
+        div.innerHTML='<span style="min-width:55px;opacity:.7;font-size:10px;">'+hora+'</span>'
+            +'<span style="font-family:monospace;font-weight:800;font-size:11px;color:#2980b9;">'+end+'</span>'
+            +'<span style="opacity:.5;margin:0 4px;">▸</span>'
+            +'<span style="font-size:11px;">'+prod+'</span>'
+            +'<span style="margin-left:auto;font-size:13px;">'+icons[status]+'</span>'
+            +extra;
+        logEl.insertBefore(div, logEl.firstChild);
+    }
+
+    // ─── Salvar apontamento ───────────────────────────────────────────────
     if(_auditSessaoAtual) {
-        _auditSessaoAtual.apontamentos.push({endereco:end,produto:prod,status:status,hora:hora});
+        _auditSessaoAtual.apontamentos.push({
+            endereco: end, produto: prod, status: status, hora: hora,
+            endCorreto: endCorreto||'', desc: descProd||''
+        });
         if(status==='acerto') _auditSessaoAtual.acertos++;
         else _auditSessaoAtual.erros++;
     }
 
-    // Salva no Firebase (batch a cada 5 apontamentos)
+    // Salvar a cada 5 apontamentos
     if(_auditSessaoAtual && _auditSessaoAtual.apontamentos.length%5===0) {
         _auditSalvarSessao();
     }
 
-    // Reset para próximo endereço
+    // ─── Reset para próximo ───────────────────────────────────────────────
     _auditBipState='end'; _auditEndLido='';
     endInput.value=''; prodInput.value=''; prodInput.disabled=true;
     endInput.focus();
@@ -2743,20 +2854,30 @@ window.auditBipProd = function() {
 window.auditEncerrarSessao = function() {
     if(_auditSessaoAtual) {
         _auditSessaoAtual.fim = new Date().toISOString();
-        _auditSalvarSessao();
+        _auditSalvarSessao().then(function(){
+            if(typeof showToast==='function') showToast('✅ Sessão encerrada e guardada!', 'success');
+        });
     }
-    document.getElementById('audit-bip-panel').style.display='none';
-    document.getElementById('audit-lista-panel').style.display='none';
-    document.getElementById('audit-login-panel').style.display='';
+    var panels = ['audit-bip-panel','audit-lista-panel'];
+    panels.forEach(function(id){ var el=document.getElementById(id); if(el) el.style.display='none'; });
+    var loginPanel = document.getElementById('audit-login-panel');
+    if(loginPanel) loginPanel.style.display='';
     _auditSessaoAtual=null; _auditBipState='end'; _auditEndLido='';
 };
 
 async function _auditSalvarSessao() {
     if(!_auditSessaoAtual) return;
     try {
-        var key = 'audit_sessao_'+Date.now();
-        await window.saveToDB(key, _auditSessaoAtual);
-    } catch(e) {}
+        var sessoes = await window.getFromDB('auditSessoes') || [];
+        // Actualizar sessão existente ou adicionar nova
+        var idx = sessoes.findIndex(function(s){ return s.inicio === _auditSessaoAtual.inicio && s.operador === _auditSessaoAtual.operador; });
+        if(idx >= 0) sessoes[idx] = _auditSessaoAtual;
+        else sessoes.unshift(_auditSessaoAtual);
+        // Guardar apenas últimas 200 sessões para não encher o IndexedDB
+        if(sessoes.length > 200) sessoes = sessoes.slice(0,200);
+        await window.saveToDB('auditSessoes', sessoes);
+        _auditSessoes = sessoes;
+    } catch(e) { console.warn('_auditSalvarSessao:', e); }
 }
 
 // ── Lista Todos os Endereços ──────────────────────────────────
@@ -2787,20 +2908,26 @@ window.auditFiltrarLista = function() {
 
 // ── Painel Gestor ─────────────────────────────────────────────
 window.auditGestorLoad = function() {
-    // Tenta carregar dados do Firebase
     Promise.all([
-        window.getFromDB('audit_estoque_guarda').catch(()=>null),
-        window.getFromDB('audit_enderecos_picking').catch(()=>null)
+        window.getFromDB('audit_estoque_guarda').catch(function(){return null;}),
+        window.getFromDB('audit_enderecos_picking').catch(function(){return null;})
     ]).then(function(results) {
         if(results[0]&&results[0].data) {
             _auditDB = results[0].data;
+            // Reconstruir mapas produto/ean → endereço
+            _auditMapProdEnd = {}; _auditMapEanEnd = {};
+            _auditDB.forEach(function(d){
+                if(d.produto) _auditMapProdEnd[d.produto] = d.endereco;
+                if(d.ean)     _auditMapEanEnd[d.ean]      = d.endereco;
+            });
             var el=document.getElementById('status-estoque-guarda');
-            if(el) el.innerHTML='<span style="color:#27ae60;font-weight:700;">✅ '+_auditDB.length+' itens — '+results[0].arquivo+'</span>';
+            if(el) el.innerHTML='<span style="color:#27ae60;font-weight:700;">✅ '+_auditDB.length+' itens — '+(results[0].arquivo||'')+'</span>';
         }
         if(results[1]&&results[1].data) {
             _auditEnderecoDB = results[1].data;
+            if(results[1].mapa) _auditMapEndProd = results[1].mapa;
             var el=document.getElementById('status-enderecos-picking');
-            if(el) el.innerHTML='<span style="color:#8e44ad;font-weight:700;">✅ '+_auditEnderecoDB.length+' endereços — '+results[1].arquivo+'</span>';
+            if(el) el.innerHTML='<span style="color:#8e44ad;font-weight:700;">✅ '+_auditEnderecoDB.length+' endereços — '+(results[1].arquivo||'')+'</span>';
         }
         auditGestorRefresh();
     });
@@ -2863,10 +2990,14 @@ function auditRenderApontamentos(sessoes) {
         'divergencia':    '<span style="background:#fadbd8;color:#e74c3c;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:800;">✗ Divergência</span>',
         'nao-encontrado': '<span style="background:#fff3cd;color:#856404;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:800;">⚠ Não enc.</span>'
     };
-    tbody.innerHTML = todos.slice(-100).reverse().map(function(a){
-        return '<tr><td style="padding:6px 8px;">'+a.operador+'</td>'
+    tbody.innerHTML = todos.slice(-150).reverse().map(function(a){
+        var endCorretoBadge = (a.endCorreto && a.status==='divergencia')
+            ? '<br><span style="color:#e74c3c;font-size:9px;font-weight:800;font-family:monospace;">📍 Correto: '+a.endCorreto+'</span>'
+            : '';
+        return '<tr>'
+            +'<td style="padding:6px 8px;font-size:11px;">'+a.operador+'</td>'
             +'<td style="padding:6px 8px;font-family:monospace;font-size:11px;font-weight:700;color:#2980b9;">'+a.endereco+'</td>'
-            +'<td style="padding:6px 8px;font-size:11px;">'+a.produto+'</td>'
+            +'<td style="padding:6px 8px;font-size:11px;">'+a.produto+endCorretoBadge+'</td>'
             +'<td style="padding:6px 8px;">'+(statusHtml[a.status]||a.status)+'</td>'
             +'<td style="padding:6px 8px;font-size:10px;color:#888;">'+a.hora+'</td></tr>';
     }).join('');
@@ -2898,6 +3029,24 @@ window.auditExportarGestor = function() {
     XLSX.writeFile(wb,'Auditoria_'+new Date().toISOString().slice(0,10)+'.xlsx');
 };
 
+
+// ── Link Público do Operador ────────────────────────────────────────────
+window.copiarLinkOperador = function() {
+    var base = window.location.href.split('?')[0];
+    var link = base + '?mode=auditoria';
+    if(navigator.clipboard) {
+        navigator.clipboard.writeText(link).then(function(){
+            if(typeof showToast==='function') showToast('✅ Link copiado! Envie para o operador pelo WhatsApp.', 'success');
+            else alert('Link copiado:\n'+link);
+        });
+    } else {
+        var el = document.createElement('textarea');
+        el.value = link; document.body.appendChild(el); el.select();
+        document.execCommand('copy'); document.body.removeChild(el);
+        if(typeof showToast==='function') showToast('✅ Link copiado!', 'success');
+        else alert('Link copiado:\n'+link);
+    }
+};
 window.auditExportarHistorico = function() { auditExportarGestor(); };
 window.auditFiltrarHistorico  = function() { auditCarregarApontamentos(); };
 
@@ -2945,8 +3094,8 @@ window.gerarInsightIA = function() {
 window.addEventListener('load', function() {
     setTimeout(function() {
         Promise.all([
-            window.getFromDB&&window.getFromDB('audit_estoque_guarda').catch(()=>null),
-            window.getFromDB&&window.getFromDB('audit_enderecos_picking').catch(()=>null)
+            window.getFromDB&&window.getFromDB('audit_estoque_guarda').catch(function(){return null;}),
+            window.getFromDB&&window.getFromDB('audit_enderecos_picking').catch(function(){return null;})
         ]).then(function(r) {
             if(r[0]&&r[0].data) _auditDB = r[0].data;
             if(r[1]&&r[1].data) _auditEnderecoDB = r[1].data;
