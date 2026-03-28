@@ -59,110 +59,50 @@ let SECTORS = {
 const DEFAULT_METAS = { 'm_MEDICAMENTO': 450, 'm_PERFUMARIA': 450, 'm_CONTROLADO': 50, 'm_DERMO': 300, 'm_VOLUMOSO': 300, 'm_ALIMENTO': 250, 'm_LATA': 150, 'm_VM': 300, 'm_VH': 150, 'm_RUAS': 250 };
 const META_LABELS = { 'm_MEDICAMENTO': 'Med', 'm_PERFUMARIA': 'Perf', 'm_CONTROLADO': 'Contr', 'm_DERMO': 'Dermo', 'm_VOLUMOSO': 'Vol', 'm_ALIMENTO': 'Alim', 'm_LATA': 'Lata', 'm_VM': 'VM', 'm_VH': 'VH', 'm_RUAS': 'Ruas' };
 
-// ═══════════════════════════════════════════════════════════════
-// MOTOR DE DADOS — IndexedDB (sem limite, funciona em file:// e Netlify)
-// ═══════════════════════════════════════════════════════════════
-const IDB_NAME  = 'SistemaLogistico';
-const IDB_STORE = 'dados';
-let   _idb      = null;
+const firebaseConfig = { apiKey: "AIzaSyDMs67hSbMC3zMJt7qYct1zuvQhu7Rk_t4", authDomain: "sistema-logistica-f03ef.firebaseapp.com", projectId: "sistema-logistica-f03ef", storageBucket: "sistema-logistica-f03ef.firebasestorage.app", messagingSenderId: "874583974046", appId: "1:874583974046:web:c12cb71a831ea649a89b8f" };
+firebase.initializeApp(firebaseConfig);
+const dbCloud = firebase.firestore();
 
-// dbCloud stub — mantém compatibilidade com código antigo que chama dbCloud
-const dbCloud = {
-    collection: function(col) {
-        return {
-            add:    async function(d) { const k=col+'_'+Date.now(); await window.saveToDB(k,{...d,_col:col}); return {id:k}; },
-            doc:    function(id)  { return { set: async function(d){ await window.saveToDB(col+'__'+id,d); }, update: async function(d){ const old=await window.getFromDB(col+'__'+id)||{}; await window.saveToDB(col+'__'+id,{...old,...d}); }, get: async function(){ const v=await window.getFromDB(col+'__'+id); return {exists:!!v,data:()=>v||{},id}; }, delete: async function(){ await window.saveToDB(col+'__'+id,null); } }; },
-            where:  function()   { return { get: async function(){ const all=await window.getFromDB('_col_'+col)||[]; return {empty:!all.length,forEach:function(cb){all.forEach(d=>cb({id:d._id,data:()=>d}));}}; } }; },
-            get:    async function(){ const all=await window.getFromDB('_col_'+col)||[]; return {empty:!all.length,forEach:function(cb){all.forEach(d=>cb({id:d._id,data:()=>d}));}}; }
-        };
-    }
-};
-
-window.openDB = function() {
-    return new Promise(function(resolve) {
-        if (_idb) { resolve(_idb); return; }
-        const req = indexedDB.open(IDB_NAME, 1);
-        req.onupgradeneeded = function(e) {
-            const db = e.target.result;
-            if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE, {keyPath:'k'});
-        };
-        req.onsuccess = function(e) { _idb = e.target.result; resolve(_idb); };
-        req.onerror   = function()  { resolve(null); };
-    });
-};
-
-window.saveToDB = async function(k, v) {
-    if (v === null || v === undefined) return; // ignore null deletes for compat
-    const db = await window.openDB();
-    const str = JSON.stringify(v);
-    if (db) {
-        return new Promise(function(resolve) {
-            try {
-                const tx = db.transaction(IDB_STORE, 'readwrite');
-                tx.objectStore(IDB_STORE).put({k: k, v: str});
-                tx.oncomplete = function() { resolve(); };
-                tx.onerror    = function() { _lsSave(k, str); resolve(); };
-            } catch(e) { _lsSave(k, str); resolve(); }
-        });
-    }
-    _lsSave(k, str);
-};
-
-function _lsSave(k, str) {
-    const SZ = 300000;
-    const mk = 'sysLog3_'+k+'__m';
+window.openDB = async function () { return true; };
+window.saveToDB = async function (k, v) {
     try {
-        const old = JSON.parse(localStorage.getItem(mk)||'null');
-        if (old && old.n) for(let i=0;i<old.n;i++) localStorage.removeItem('sysLog3_'+k+'__'+i);
-    } catch(e) {}
+        const strData = JSON.stringify(v); const chunkSize = 800000;
+        if (strData.length > chunkSize) {
+            const totalChunks = Math.ceil(strData.length / chunkSize);
+            await dbCloud.collection("logistica_dados").doc(k).set({ isChunked: true, chunks: totalChunks });
+            for (let i = 0; i < totalChunks; i++) {
+                const chunkStr = strData.substring(i * chunkSize, (i + 1) * chunkSize);
+                await dbCloud.collection("logistica_dados").doc(`${k}_chunk_${i}`).set({ payload: chunkStr });
+            }
+        } else { await dbCloud.collection("logistica_dados").doc(k).set({ isChunked: false, payload: strData }); }
+    } catch (e) { console.error(e); throw e; }
+};
+
+window.getFromDB = async function (k) {
     try {
-        if (str.length <= SZ) { localStorage.setItem('sysLog3_'+k, str); localStorage.removeItem(mk); }
-        else {
-            const n = Math.ceil(str.length/SZ);
-            localStorage.setItem(mk, JSON.stringify({n})); localStorage.removeItem('sysLog3_'+k);
-            for(let i=0;i<n;i++) { try { localStorage.setItem('sysLog3_'+k+'__'+i, str.slice(i*SZ,(i+1)*SZ)); } catch(e) { break; } }
+        const doc = await dbCloud.collection("logistica_dados").doc(k).get();
+        if (doc.exists) {
+            const data = doc.data();
+            if (data.isChunked) {
+                let fullStr = "";
+                for (let i = 0; i < data.chunks; i++) {
+                    const chunkDoc = await dbCloud.collection("logistica_dados").doc(`${k}_chunk_${i}`).get();
+                    if (chunkDoc.exists) fullStr += chunkDoc.data().payload;
+                }
+                return JSON.parse(fullStr);
+            } else { return JSON.parse(data.payload || "{}"); }
         }
-    } catch(e) { console.warn('_lsSave quota:', k); }
-}
-
-window.getFromDB = async function(k) {
-    const db = await window.openDB();
-    if (db) {
-        const r = await new Promise(function(resolve) {
-            try {
-                const tx = db.transaction(IDB_STORE, 'readonly');
-                const req = tx.objectStore(IDB_STORE).get(k);
-                req.onsuccess = function(e) { resolve(e.target.result ? JSON.parse(e.target.result.v) : null); };
-                req.onerror   = function()  { resolve(null); };
-            } catch(e) { resolve(null); }
-        });
-        if (r !== null) return r;
-    }
-    // Fallbacks localStorage — tenta todas as versões de chave
-    try {
-        const mk = 'sysLog3_'+k+'__m';
-        const meta = localStorage.getItem(mk);
-        if (meta) { const {n}=JSON.parse(meta); let f=''; for(let i=0;i<n;i++) f+=localStorage.getItem('sysLog3_'+k+'__'+i)||''; return f?JSON.parse(f):null; }
-        const s = localStorage.getItem('sysLog3_'+k); if(s) return JSON.parse(s);
-        const l1 = localStorage.getItem('sysLogV2_'+k); if(l1) return JSON.parse(l1);
-        const l2 = localStorage.getItem('sysLog_'+k)||localStorage.getItem(k); if(l2) return JSON.parse(l2);
-        // Chave especial: rh_colaboradores (formato antigo do index_antigo)
-        if (k === 'dRH') { const lrh = localStorage.getItem('rh_colaboradores'); if(lrh) return JSON.parse(lrh); }
-    } catch(e) {}
-    return null;
+        return null;
+    } catch (e) { return null; }
 };
 
 function setSysModule(mod) {
     document.querySelectorAll('.main-mod-btn').forEach(btn => btn.classList.remove('active'));
-    var btnEl = document.getElementById('btn-mod-' + mod);
-    if(btnEl) btnEl.classList.add('active');
-    // Hide all bars and wrappers
-    ['bar-operacao','bar-rh','bar-auditoria'].forEach(function(id){
-        var el=document.getElementById(id); if(el) el.style.display='none';
-    });
-    ['wrapper-operacao','wrapper-rh','wrapper-auditoria'].forEach(function(id){
-        var el=document.getElementById(id); if(el) el.classList.remove('active');
-    });
+    document.getElementById('btn-mod-' + mod).classList.add('active');
+    document.getElementById('bar-operacao').style.display = 'none';
+    document.getElementById('bar-rh').style.display = 'none';
+    document.getElementById('wrapper-operacao').classList.remove('active');
+    document.getElementById('wrapper-rh').classList.remove('active');
     if (mod === 'operacao') {
         document.getElementById('bar-operacao').style.display = 'flex';
         document.getElementById('wrapper-operacao').classList.add('active');
@@ -170,20 +110,13 @@ function setSysModule(mod) {
     } else if (mod === 'rh') {
         document.getElementById('bar-rh').style.display = 'flex';
         document.getElementById('wrapper-rh').classList.add('active');
-    } else if (mod === 'auditoria') {
-        var bar = document.getElementById('bar-auditoria');
-        var wb  = document.getElementById('wrapper-auditoria');
-        if(bar) bar.style.display='flex';
-        if(wb)  wb.classList.add('active');
     }
 }
 
 function switchTab(btnElement, targetViewId, activeClassStr) {
     document.querySelectorAll('.view-section').forEach(e => e.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(e => { e.className = e.className.replace(/\b\S+-active\b/g, '').replace(/\bactive\b/g, '').trim(); e.classList.add('tab-btn'); });
-    var targetEl = document.getElementById('view-' + targetViewId);
-    if(!targetEl) { targetEl = document.getElementById('view-audit-' + targetViewId); }
-    if(targetEl) targetEl.classList.add('active');
+    document.getElementById('view-' + targetViewId).classList.add('active');
     if (btnElement) btnElement.classList.add(activeClassStr);
     if (targetViewId === 'dashboard' && chP && chF) { setTimeout(() => { chP.resize(); chF.resize(); }, 100); }
     if (targetViewId === 'cenario') { setTimeout(() => runCenarioCalc(), 100); }
@@ -219,69 +152,35 @@ function renderMetas() {
     } catch(e) { console.warn('renderMetas erro:', e); }
 }
 
-let _initDone = false;
 async function init() {
-    if (_initDone) return;
-    _initDone = true;
     try {
-        // 1. Inicializar IndexedDB
-        await window.openDB();
-
-        // 2. Limpar lixo de versões anteriores que causavam QuotaExceeded
-        try {
-            Object.keys(localStorage)
-                .filter(function(k){ return k.startsWith('sysLogV2_'); })
-                .forEach(function(k){ localStorage.removeItem(k); });
-        } catch(e) {}
-
-        // 3. Carregar dados do RH com fallback em TODAS as chaves possíveis
-        let savedRH = await window.getFromDB('dRH');
-        if (!savedRH || !savedRH.length) {
-            const legKeys = ['rh_colaboradores','dRH','sysLog_dRH','sysLogV2_dRH','sysLog3_dRH'];
-            for (const k of legKeys) {
-                try { const v=localStorage.getItem(k); if(v){const p=JSON.parse(v); if(p&&p.length){savedRH=p;break;}} } catch(e) {}
+        if (window.openDB) await window.openDB();
+        if (window.getFromDB) {
+            const savedRH = await window.getFromDB('dRH');
+            if (savedRH && savedRH.length > 0) { 
+                dRH = savedRH; rhData = (await window.getFromDB('rhData')) || {}; 
+                const savedPendencias = await window.getFromDB('pendenciasRH');
+                if(savedPendencias) pendenciasRH = savedPendencias;
+                renderRHQuad(); renderFerias(); renderBanco(); renderAbs(); renderPontoMensal(); 
             }
+            const hist = await window.getFromDB('dHistory');
+            if (hist) { globalHistory = hist; renderHistoryList(); }
+            await restoreSession(); 
         }
-        if (savedRH && savedRH.length > 0) {
-            dRH = savedRH;
-            let savedRhData = await window.getFromDB('rhData');
-            if (!savedRhData || !Object.keys(savedRhData).length) {
-                const legKeys2 = ['rhData','sysLog_rhData','sysLog3_rhData'];
-                for (const k of legKeys2) {
-                    try { const v=localStorage.getItem(k); if(v){const p=JSON.parse(v); if(p&&Object.keys(p).length){savedRhData=p;break;}} } catch(e) {}
-                }
-            }
-            rhData = savedRhData || {};
-            // Persistir no IndexedDB para sessões futuras
-            await window.saveToDB('dRH', dRH);
-            await window.saveToDB('rhData', rhData);
-            const savedPendencias = await window.getFromDB('pendenciasRH');
-            if(savedPendencias) pendenciasRH = savedPendencias;
-            renderRHQuad(); renderFerias(); renderBanco(); renderAbs(); renderPontoMensal();
-            if(typeof window.renderTabelaEPI === 'function') window.renderTabelaEPI();
-            if(typeof window.renderEpiTab === 'function') window.renderEpiTab();
-        }
-
-        // 4. Histórico
-        const hist = await window.getFromDB('dHistory');
-        if (hist) { globalHistory = hist; renderHistoryList(); }
-
-        // 5. Sessão operação
-        await restoreSession();
-
-        // 6. Metas, setores, relógio
+        // METAS — renderiza SEMPRE independente de erros anteriores
         renderMetas();
-        try { const ss = JSON.parse(localStorage.getItem('sysLog_sectors')); if(ss) SECTORS=ss; } catch(e) {}
+        const ss = JSON.parse(localStorage.getItem('sysLog_sectors'));
+        if (ss) SECTORS = ss;
         aplicarCoresOficiais(0);
         setInterval(updateClock, 1000);
-        setInterval(async function() {
+        // AUTO-SAVE automático a cada 30 segundos
+        setInterval(async () => { 
             try { await autoSaveData(); } catch(e) { console.warn('autoSave falhou:', e); }
         }, 30000);
         const today = new Date();
         const pickSelect = document.getElementById('pick-month-select');
-        if(pickSelect) pickSelect.value = today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0');
-
-    } catch(e) { console.error("Erro init:", e); }
+        if(pickSelect) pickSelect.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    } catch (e) { console.error("Erro init:", e); }
 }
 
 async function restoreSession() {
@@ -318,15 +217,10 @@ async function restoreSession() {
 
 async function autoSaveData() {
     if (!window.saveToDB) return;
-    const indicator = document.getElementById('saveIndicator');
     try {
+        // Indicador visual de salvamento
+        const indicator = document.getElementById('saveIndicator');
         if (indicator) { indicator.textContent = '💾 Salvando...'; indicator.style.color = '#f39c12'; }
-        // RH — salvar sempre (dados críticos)
-        if (dRH && dRH.length) {
-            await window.saveToDB('dRH', dRH);
-            try { localStorage.setItem('rh_colaboradores', JSON.stringify(dRH)); } catch(e) {}
-        }
-        if (rhData && Object.keys(rhData).length) await window.saveToDB('rhData', rhData);
         if (dC.length) {
             // Salvar dC slim — só campos usados pelo runCalc (evita timeout por volume)
             const dCSlim = dC.map(r => {
@@ -370,30 +264,17 @@ async function saveSession() {
     const loadScreen = document.getElementById('loading'); const loadMsg = document.getElementById('loadMsg'); loadScreen.style.display = 'flex';
     try {
         if (!window.saveToDB) throw new Error("Banco não inicializado.");
-        loadMsg.innerText = "Salvando dados localmente...";
+        loadMsg.innerText = "Sincronizando com Google Cloud...";
         await autoSaveData();
         if (dRH && dRH.length) await window.saveToDB('dRH', dRH);
         if (Object.keys(rhData).length) await window.saveToDB('rhData', rhData);
         await window.saveToDB('dHistory', globalHistory); await window.saveToDB('forceBoxCalc', forceBoxCalc);
         localStorage.setItem('sysLog_metas', JSON.stringify(getCurrentMetas())); localStorage.setItem('sysLog_sectors', JSON.stringify(SECTORS));
-        alert("✅ Todos os dados salvos com sucesso!");
-    } catch (error) { alert("⚠️ Erro ao salvar. Motivo: " + error.message); } finally { loadScreen.style.display = 'none'; loadMsg.innerText = "Processando..."; }
+        alert("Sincronização com Google Cloud finalizada com sucesso!");
+    } catch (error) { alert("Atenção: Sincronização parou! Motivo: " + error.message); } finally { loadScreen.style.display = 'none'; loadMsg.innerText = "Processando..."; }
 }
 
-async function clearSession() {
-    if (confirm("Limpar apenas a operação DIÁRIA? (Dados de RH são mantidos)")) {
-        try {
-            await window.saveToDB('dC', []);
-            await window.saveToDB('dE', []);
-            await window.saveToDB('dPickRes', []);
-            // Limpar só chaves de operação, manter rh_colaboradores e rhData
-            Object.keys(localStorage)
-                .filter(function(k){ return k.startsWith('sysLog') && !k.includes('rh_colabo') && !k.includes('rhData'); })
-                .forEach(function(k){ localStorage.removeItem(k); });
-        } catch(e) {}
-        location.reload();
-    }
-}
+async function clearSession() { if (confirm("Limpar a operação DIÁRIA?")) { if (window.saveToDB) { await window.saveToDB('dC', []); await window.saveToDB('dE', []); } localStorage.clear(); location.reload(); } }
 
 function getCurrentMetas() { const m = {}; for (let k in DEFAULT_METAS) { const el = document.getElementById(k); m[k] = (el && el.value) ? parseInt(el.value) : DEFAULT_METAS[k]; if (isNaN(m[k])) m[k] = DEFAULT_METAS[k]; } return m; }
 
@@ -622,13 +503,9 @@ document.getElementById('f_rh').addEventListener('change', function () {
                 if (rowStr.includes('NOME') && (rowStr.includes('MATRICULA') || rowStr.includes('MATRÍCULA'))) { headerRow = i; break; }
             }
             dRH = XLSX.utils.sheet_to_json(sheet, { range: headerRow, raw: false });
-            await window.saveToDB('dRH', dRH);
-            await window.saveToDB('rhData', rhData);
-            try { localStorage.setItem('rh_colaboradores', JSON.stringify(dRH)); } catch(e) {}
+            if (window.saveToDB) await window.saveToDB('dRH', dRH);
             renderRHQuad(); renderFerias(); renderBanco(); renderAbs(); renderPontoMensal();
-            if(typeof window.renderTabelaEPI === 'function') window.renderTabelaEPI();
-            if(typeof window.renderEpiTab === 'function') window.renderEpiTab();
-            alert("✅ Quadro importado e guardado com sucesso!");
+            alert("Quadro importado!");
         } catch (err) { alert("Erro: " + err); }
         document.getElementById('loading').style.display = 'none';
     };
@@ -788,12 +665,7 @@ function renderFerias() {
     });
 }
 
-async function updateRHData(mat, field, val, inputEl) {
-    ensureRhData(mat);
-    rhData[mat][field] = val;
-    if (window.saveToDB) await window.saveToDB('rhData', rhData);
-    if (inputEl && inputEl.type !== 'checkbox') { inputEl.style.backgroundColor = '#d4edda'; setTimeout(function(){ inputEl.style.backgroundColor = ''; }, 1000); }
-}
+async function updateRHData(mat, field, val, inputEl) { ensureRhData(mat); rhData[mat][field] = val; if (window.saveToDB) window.saveToDB('rhData', rhData); if (inputEl && inputEl.type !== 'checkbox') { inputEl.style.backgroundColor = '#d4edda'; setTimeout(() => { inputEl.style.backgroundColor = ''; }, 1000); } }
 
 function renderBanco() {
     const tb = document.getElementById('tbBanco'); if (!tb || !dRH.length) return; tb.innerHTML = ''; let totalHoras = 0;
@@ -1772,295 +1644,22 @@ var _epiCache={docs:null,ts:0,TTL:90000};
 var EPI_ITEMS=[{k:'blusa',lbl:'Blusa',ico:'fas fa-tshirt'},{k:'calca',lbl:'Calca',ico:'fas fa-male'},{k:'bermuda',lbl:'Bermuda',ico:'fas fa-cut'},{k:'casaco',lbl:'Casaco',ico:'fas fa-mitten'},{k:'bota',lbl:'Bota',ico:'fas fa-shoe-prints'},{k:'luva',lbl:'Luva',ico:'fas fa-hand-paper'},{k:'cinta',lbl:'Cinta',ico:'fas fa-life-ring'}];
 async function loadEpiColabs(){const sel=document.getElementById('epi_sel');if(!sel)return;try{const rh=await window.getFromDB('dRH');if(rh&&rh.length>0){const at=rh.filter(r=>(r['Status']||r['STATUS']||'ATIVO').toUpperCase()!=='INATIVO');at.sort((a,b)=>(a['Nome']||a['NOME']||'').localeCompare(b['Nome']||b['NOME']||''));sel.innerHTML='<option value="">-- Selecione o seu nome --</option>';at.forEach(r=>{const mat=r['Matrícula']||r['Matricula']||r['MATRICULA']||'';const nome=r['Nome']||r['NOME']||'';if(nome)sel.innerHTML+=`<option value="${mat}">${nome}</option>`;});return;}}catch(e){}sel.innerHTML='<option value="">Sem lista.</option>';}
 window.epiTog=function(item,size){const grp=document.getElementById('epi_grp_'+item);if(!grp)return;const same=_epiPubSel[item]===size;grp.querySelectorAll('.epi-sz-btn').forEach(b=>b.classList.remove('selected'));_epiPubSel[item]=same?'':size;if(!same)grp.querySelectorAll('.epi-sz-btn').forEach(b=>{if(b.textContent.trim()===size)b.classList.add('selected');});};
-window.submitEpiPublicForm=async function(){const sel=document.getElementById('epi_sel');const vm=document.getElementById('epi-vmsg');const err=t=>{if(vm){vm.style.display='block';vm.textContent=t;}};if(!sel||!sel.value){err('Selecione o seu nome!');return;}if(!Object.values(_epiPubSel).some(v=>v!=='')){err('Selecione pelo menos um tamanho!');return;}if(vm)vm.style.display='none';const btn=document.getElementById('epi-sub-btn');if(btn){btn.disabled=true;btn.innerText='A ENVIAR...';}const nome=sel.options[sel.selectedIndex].text;const p={nomeCompleto:nome,nome,matricula:sel.value,blusa:_epiPubSel.blusa,calca:_epiPubSel.calca,bermuda:_epiPubSel.bermuda,casaco:_epiPubSel.casaco,bota:_epiPubSel.bota,luva:_epiPubSel.luva,cinta:_epiPubSel.cinta,timestamp:new Date().getTime(),status:'PENDENTE'};try{
-    const inbox = await window.getFromDB('epi_inbox') || [];
-    p.id = 'epi_'+Date.now();
-    inbox.push(p);
-    await window.saveToDB('epi_inbox', inbox);
-}catch(e){ console.warn('EPI submit:', e); }document.getElementById('epi-pub-form').style.display='none';document.getElementById('epi-ok-view').style.display='block';};
+window.submitEpiPublicForm=async function(){const sel=document.getElementById('epi_sel');const vm=document.getElementById('epi-vmsg');const err=t=>{if(vm){vm.style.display='block';vm.textContent=t;}};if(!sel||!sel.value){err('Selecione o seu nome!');return;}if(!Object.values(_epiPubSel).some(v=>v!=='')){err('Selecione pelo menos um tamanho!');return;}if(vm)vm.style.display='none';const btn=document.getElementById('epi-sub-btn');if(btn){btn.disabled=true;btn.innerText='A ENVIAR...';}const nome=sel.options[sel.selectedIndex].text;const p={nomeCompleto:nome,nome,matricula:sel.value,blusa:_epiPubSel.blusa,calca:_epiPubSel.calca,bermuda:_epiPubSel.bermuda,casaco:_epiPubSel.casaco,bota:_epiPubSel.bota,luva:_epiPubSel.luva,cinta:_epiPubSel.cinta,timestamp:new Date().getTime(),status:'PENDENTE'};try{await dbCloud.collection('logistica_epi_inbox').add(p);}catch(e){}document.getElementById('epi-pub-form').style.display='none';document.getElementById('epi-ok-view').style.display='block';};
 window.copyEpiFormLink=function(){const nl=String.fromCharCode(10);const link=window.location.href.split('?')[0]+'?mode=formepi';const msg='Solicitacao de Uniforme & EPI'+nl+nl+'Acesse o link, selecione seu nome e tamanhos:'+nl+nl+link+nl+nl+'Obrigado!';if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(msg).then(()=>alert('Link copiado!')).catch(()=>window.open('https://api.whatsapp.com/send?text='+encodeURIComponent(msg),'_blank'));else window.open('https://api.whatsapp.com/send?text='+encodeURIComponent(msg),'_blank');};
 window.renderEpiTab=async function(forceRefresh){if(_epiTabBusy)return;_epiTabBusy=true;try{await Promise.all([loadEpiInbox(forceRefresh),renderEpiTable(forceRefresh)]);}finally{setTimeout(()=>{_epiTabBusy=false;},1500);}};
-window.loadEpiInbox=async function(forceRefresh){const body=document.getElementById('epiInboxBody');if(!body)return;body.innerHTML='<div style="padding:12px;text-align:center;color:#999;font-size:12px;"><i class="fas fa-circle-notch fa-spin"></i> Carregando...</div>';_epiInboxMap={};let items=[];try{
-    const inbox = await window.getFromDB('epi_inbox') || [];
-    items = inbox.filter(function(d){ return d.status==='PENDENTE'; }).map(function(d){ return {id:d.id, data:d}; });
-    items.sort(function(a,b){ return (b.data.timestamp||0)-(a.data.timestamp||0); });
-}catch(e){ console.warn('EPI inbox:', e); }if(!items.length){body.innerHTML='<div style="padding:16px;text-align:center;color:#999;font-size:12px;">Nenhuma solicitacao pendente.</div>';return;}let h='';items.forEach((item,i)=>{_epiInboxMap[i]=item;const d=item.data;const tags=EPI_ITEMS.filter(it=>d[it.k]).map(it=>`<span class="epi-sz-tag"><i class="${it.ico}"></i> ${it.lbl}: ${d[it.k]}</span>`).join('');h+=`<div class="epi-inbox-item"><div class="epi-inbox-name">${d.nomeCompleto||d.nome||'?'} <span style="font-size:10px;color:#999;font-weight:400;">(${d.matricula})</span></div><div class="epi-inbox-sizes">${tags}</div><div style="display:flex;gap:8px;margin-top:8px;"><button class="btn btn-green" style="padding:5px 12px;font-size:12px;" onclick="abrirModalAprovar(${i})"><i class="fas fa-check-square"></i> Aprovar Itens</button><button class="btn btn-red" style="padding:5px 12px;font-size:12px;" onclick="rejeitarEpi(${i})"><i class="fas fa-times"></i> Rejeitar</button></div></div>`;});body.innerHTML=h;};
+window.loadEpiInbox=async function(forceRefresh){const body=document.getElementById('epiInboxBody');if(!body)return;body.innerHTML='<div style="padding:12px;text-align:center;color:#999;font-size:12px;"><i class="fas fa-circle-notch fa-spin"></i> Carregando...</div>';_epiInboxMap={};let items=[];try{const snap=await dbCloud.collection('logistica_epi_inbox').where('status','==','PENDENTE').get();snap.forEach(d=>items.push({id:d.id,data:d.data()}));items.sort((a,b)=>(b.data.timestamp||0)-(a.data.timestamp||0));}catch(e){}if(!items.length){body.innerHTML='<div style="padding:16px;text-align:center;color:#999;font-size:12px;">Nenhuma solicitacao pendente.</div>';return;}let h='';items.forEach((item,i)=>{_epiInboxMap[i]=item;const d=item.data;const tags=EPI_ITEMS.filter(it=>d[it.k]).map(it=>`<span class="epi-sz-tag"><i class="${it.ico}"></i> ${it.lbl}: ${d[it.k]}</span>`).join('');h+=`<div class="epi-inbox-item"><div class="epi-inbox-name">${d.nomeCompleto||d.nome||'?'} <span style="font-size:10px;color:#999;font-weight:400;">(${d.matricula})</span></div><div class="epi-inbox-sizes">${tags}</div><div style="display:flex;gap:8px;margin-top:8px;"><button class="btn btn-green" style="padding:5px 12px;font-size:12px;" onclick="abrirModalAprovar(${i})"><i class="fas fa-check-square"></i> Aprovar Itens</button><button class="btn btn-red" style="padding:5px 12px;font-size:12px;" onclick="rejeitarEpi(${i})"><i class="fas fa-times"></i> Rejeitar</button></div></div>`;});body.innerHTML=h;};
 window.abrirModalAprovar=function(i){const item=_epiInboxMap[i];if(!item)return;_epiAprovandoIdx=i;const d=item.data;const nEl=document.getElementById('modalAprovarEpiNome');if(nEl)nEl.innerHTML=`<i class="fas fa-user"></i> ${d.nomeCompleto||d.nome||'?'} <span style="color:#888;font-weight:400;font-size:12px;">(${d.matricula})</span>`;const iEl=document.getElementById('modalAprovarEpiItens');if(iEl){const req=EPI_ITEMS.filter(it=>d[it.k]);iEl.innerHTML=req.map(it=>`<label class="epi-item-chk"><input type="checkbox" id="chk_${it.k}" checked onchange="this.closest('label').style.opacity=this.checked?'1':'0.5'"><i class="${it.ico}" style="color:#8e44ad;font-size:15px;"></i><span style="font-weight:800;min-width:60px;">${it.lbl}:</span><span style="background:#8e44ad;color:white;border-radius:5px;padding:2px 9px;font-size:12px;">${d[it.k]}</span><span style="margin-left:auto;font-size:11px;color:#27ae60;font-weight:700;">Sera fornecido</span></label>`).join('');}const btn=document.getElementById('btnConfirmarAprEpi');if(btn){btn.disabled=false;btn.innerHTML='<i class="fas fa-check"></i> Confirmar Aprovacao';}document.getElementById('modalAprovarEpi').style.display='flex';};
-window.confirmarAprovacaoEpi=async function(){const item=_epiInboxMap[_epiAprovandoIdx];if(!item)return;const btn=document.getElementById('btnConfirmarAprEpi');if(btn){btn.disabled=true;btn.innerHTML='<i class="fas fa-circle-notch fa-spin"></i> Salvando...';}const d=item.data;const forn={};EPI_ITEMS.forEach(it=>{const chk=document.getElementById('chk_'+it.k);forn[it.k]=(chk&&chk.checked&&d[it.k])?d[it.k]:'-';});if(!Object.values(forn).some(v=>v!=='-')){alert('Selecione pelo menos um item!');if(btn){btn.disabled=false;btn.innerHTML='<i class="fas fa-check"></i> Confirmar Aprovacao';}return;}const nr={id:'tmp_'+Date.now(),mat:d.matricula,nome:d.nomeCompleto||d.nome||'',blusa:forn.blusa,calca:forn.calca,bermuda:forn.bermuda,casaco:forn.casaco,bota:forn.bota,luva:forn.luva,cinta:forn.cinta,dataAprov:new Date().toLocaleDateString('pt-BR'),dataAprovTs:Date.now(),status:'aprovado',dataEntrega:''};if(_epiCache.docs)_epiCache.docs.unshift(nr);document.getElementById('modalAprovarEpi').style.display='none';renderEpiTableFromCache();try{const reg = {inboxId:item.id,mat:nr.mat,nome:nr.nome,blusa:nr.blusa,calca:nr.calca,bermuda:nr.bermuda,casaco:nr.casaco,bota:nr.bota,luva:nr.luva,cinta:nr.cinta,dataAprov:nr.dataAprov,dataAprovTs:nr.dataAprovTs,status:'aprovado',dataEntrega:'',id:'reg_'+Date.now()};
-    const regs = await window.getFromDB('epi_registros') || [];
-    regs.push(reg);
-    await window.saveToDB('epi_registros', regs);
-    const inbox2 = await window.getFromDB('epi_inbox') || [];
-    const ix = inbox2.findIndex(function(d){ return d.id===item.id; });
-    if(ix>=0) inbox2[ix].status='APROVADO';
-    await window.saveToDB('epi_inbox', inbox2);
-    if(_epiCache.docs){const idx=_epiCache.docs.findIndex(function(r){return r.id===nr.id;});if(idx>=0)_epiCache.docs[idx].id=reg.id;}}catch(e){console.warn('EPI:',e);if(_epiCache.docs)_epiCache.docs=_epiCache.docs.filter(r=>r.id!==nr.id);renderEpiTableFromCache();alert('Erro: '+e.message);return;}loadEpiInbox(true);};
-window.rejeitarEpi=async function(i){const item=_epiInboxMap[i];if(!item||!confirm('Rejeitar?'))return;try{
-    const inbox3 = await window.getFromDB('epi_inbox') || [];
-    const ir = inbox3.findIndex(function(d){ return d.id===item.id; });
-    if(ir>=0) inbox3[ir].status='REJEITADO';
-    await window.saveToDB('epi_inbox', inbox3);
-}catch(e){ console.warn('EPI rejeitar:', e); }
-loadEpiInbox(true);};
-window.confirmarEntregaEpi=async function(docId){if(!confirm('Confirmar entrega fisica?'))return;const de=new Date().toLocaleDateString('pt-BR');if(_epiCache.docs){const r=_epiCache.docs.find(r=>r.id===docId);if(r){r.status='entregue';r.dataEntrega=de;}}renderEpiTableFromCache();try{
-    const regsE = await window.getFromDB('epi_registros') || [];
-    const ie = regsE.findIndex(function(r){ return r.id===docId; });
-    if(ie>=0){ regsE[ie].status='entregue'; regsE[ie].dataEntrega=de; }
-    await window.saveToDB('epi_registros', regsE);
-}catch(e){ alert('Erro:'+e.message); _epiCache.docs=null; renderEpiTable(true); }};
-window.renderEpiTable=async function(forceRefresh){if(!forceRefresh&&_epiCache.docs&&(Date.now()-_epiCache.ts)<_epiCache.TTL){renderEpiTableFromCache();return;}const tb=document.getElementById('tbEpi');if(!tb)return;tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:12px;color:#999;"><i class="fas fa-circle-notch fa-spin"></i> Carregando...</td></tr>';try{
-    const regsR = await window.getFromDB('epi_registros') || [];
-    regsR.sort(function(a,b){ return (b.dataAprovTs||0)-(a.dataAprovTs||0); });
-    _epiCache.docs=regsR; _epiCache.ts=Date.now();
-}catch(e){if(!_epiCache.docs){tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:20px;color:#e74c3c;">Erro ao carregar.</td></tr>';return;}}renderEpiTableFromCache();};
+window.confirmarAprovacaoEpi=async function(){const item=_epiInboxMap[_epiAprovandoIdx];if(!item)return;const btn=document.getElementById('btnConfirmarAprEpi');if(btn){btn.disabled=true;btn.innerHTML='<i class="fas fa-circle-notch fa-spin"></i> Salvando...';}const d=item.data;const forn={};EPI_ITEMS.forEach(it=>{const chk=document.getElementById('chk_'+it.k);forn[it.k]=(chk&&chk.checked&&d[it.k])?d[it.k]:'-';});if(!Object.values(forn).some(v=>v!=='-')){alert('Selecione pelo menos um item!');if(btn){btn.disabled=false;btn.innerHTML='<i class="fas fa-check"></i> Confirmar Aprovacao';}return;}const nr={id:'tmp_'+Date.now(),mat:d.matricula,nome:d.nomeCompleto||d.nome||'',blusa:forn.blusa,calca:forn.calca,bermuda:forn.bermuda,casaco:forn.casaco,bota:forn.bota,luva:forn.luva,cinta:forn.cinta,dataAprov:new Date().toLocaleDateString('pt-BR'),dataAprovTs:Date.now(),status:'aprovado',dataEntrega:''};if(_epiCache.docs)_epiCache.docs.unshift(nr);document.getElementById('modalAprovarEpi').style.display='none';renderEpiTableFromCache();try{const[snapReg]=await Promise.all([dbCloud.collection('logistica_epi_registros').add({inboxId:item.id,mat:nr.mat,nome:nr.nome,blusa:nr.blusa,calca:nr.calca,bermuda:nr.bermuda,casaco:nr.casaco,bota:nr.bota,luva:nr.luva,cinta:nr.cinta,dataAprov:nr.dataAprov,dataAprovTs:nr.dataAprovTs,status:'aprovado',dataEntrega:''}),dbCloud.collection('logistica_epi_inbox').doc(item.id).update({status:'APROVADO'})]);if(_epiCache.docs){const idx=_epiCache.docs.findIndex(r=>r.id===nr.id);if(idx>=0)_epiCache.docs[idx].id=snapReg.id;}}catch(e){console.warn('EPI:',e);if(_epiCache.docs)_epiCache.docs=_epiCache.docs.filter(r=>r.id!==nr.id);renderEpiTableFromCache();alert('Erro: '+e.message);return;}loadEpiInbox(true);};
+window.rejeitarEpi=async function(i){const item=_epiInboxMap[i];if(!item||!confirm('Rejeitar?'))return;try{await dbCloud.collection('logistica_epi_inbox').doc(item.id).update({status:'REJEITADO'});}catch(e){}loadEpiInbox(true);};
+window.confirmarEntregaEpi=async function(docId){if(!confirm('Confirmar entrega fisica?'))return;const de=new Date().toLocaleDateString('pt-BR');if(_epiCache.docs){const r=_epiCache.docs.find(r=>r.id===docId);if(r){r.status='entregue';r.dataEntrega=de;}}renderEpiTableFromCache();try{await dbCloud.collection('logistica_epi_registros').doc(docId).update({status:'entregue',dataEntrega:de});}catch(e){alert('Erro:'+e.message);_epiCache.docs=null;renderEpiTable(true);}};
+window.renderEpiTable=async function(forceRefresh){if(!forceRefresh&&_epiCache.docs&&(Date.now()-_epiCache.ts)<_epiCache.TTL){renderEpiTableFromCache();return;}const tb=document.getElementById('tbEpi');if(!tb)return;tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:12px;color:#999;"><i class="fas fa-circle-notch fa-spin"></i> Carregando...</td></tr>';try{const snap=await dbCloud.collection('logistica_epi_registros').get();const docs=[];snap.forEach(d=>docs.push({id:d.id,...d.data()}));docs.sort((a,b)=>(b.dataAprovTs||0)-(a.dataAprovTs||0));_epiCache.docs=docs;_epiCache.ts=Date.now();}catch(e){if(!_epiCache.docs){tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:20px;color:#e74c3c;">Erro ao carregar.</td></tr>';return;}}renderEpiTableFromCache();};
 window.renderEpiTableFromCache=function(){const tb=document.getElementById('tbEpi');if(!tb)return;const docs=_epiCache.docs||[];const fSel=document.getElementById('epiFilterStatus');const f=fSel?fSel.value:'all';const filtered=f==='all'?docs:docs.filter(r=>r.status===f);const cnt=document.getElementById('epiRegCount');if(cnt)cnt.textContent=docs.length;const ecnt=document.getElementById('epiEntregCount');if(ecnt)ecnt.textContent=docs.filter(r=>r.status==='entregue').length+' entregues';if(!filtered.length){tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:20px;color:#999;">Nenhum registro.</td></tr>';return;}const sz=v=>(!v||v==='-')?'<span style="color:#ccc;">-</span>':`<span style="background:#e8daef;color:#6c3483;padding:2px 7px;border-radius:4px;font-weight:700;font-size:10px;">${v}</span>`;tb.innerHTML=filtered.map(x=>{const ok=x.status==='entregue';const isParcial=x.status==='parcial';const badge=ok?`<span class="epi-badge-entg"><i class="fas fa-check-double"></i> Entregue ${x.dataEntrega||''}</span>`:isParcial?`<span style="background:#d6eaf8;color:#1a5276;padding:3px 9px;border-radius:10px;font-size:10px;font-weight:800;white-space:nowrap;"><i class="fas fa-box-open"></i> Parcial ${x.dataEntrega||''}</span>`:`<span class="epi-badge-pend"><i class="fas fa-box"></i> Aguard. Entrega</span>`;const act=ok?`<button onclick="excluirEpiReg('${x.id}')" style="background:#e74c3c;color:white;border:none;border-radius:4px;padding:3px 8px;font-size:10px;font-weight:700;cursor:pointer;"><i class="fas fa-trash"></i></button>`:`<button onclick="abrirModalEntregaEpi('${x.id}')" style="background:#27ae60;color:white;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;"><i class="fas fa-box-open"></i> Entregar</button> <button onclick="excluirEpiReg('${x.id}')" style="background:#e74c3c;color:white;border:none;border-radius:4px;padding:5px 8px;font-size:10px;font-weight:700;cursor:pointer;margin-left:4px;"><i class="fas fa-trash"></i></button>`;return `<tr class="${ok?'epi-reg-row-entg':''}"><td style="text-align:left;font-weight:700;white-space:nowrap;">${x.nome}</td><td style="text-align:left;color:#777;font-size:10px;">${x.mat}</td><td>${sz(x.blusa)}</td><td>${sz(x.calca)}</td><td>${sz(x.bermuda)}</td><td>${sz(x.casaco)}</td><td>${sz(x.bota)}</td><td>${sz(x.luva)}</td><td>${sz(x.cinta)}</td><td style="color:#777;font-size:10px;white-space:nowrap;">${x.dataAprov||''}</td><td>${badge}</td><td style="white-space:nowrap;">${act}</td></tr>`;}).join('');};
-window.excluirEpiReg=async function(docId){if(!confirm('Excluir permanentemente?'))return;if(_epiCache.docs)_epiCache.docs=_epiCache.docs.filter(r=>r.id!==docId);renderEpiTableFromCache();try{
-    const regsX = (await window.getFromDB('epi_registros') || []).filter(function(r){ return r.id!==docId; });
-    await window.saveToDB('epi_registros', regsX);
-}catch(e){ alert('Erro:'+e.message); _epiCache.docs=null; renderEpiTable(true); }};
+window.excluirEpiReg=async function(docId){if(!confirm('Excluir permanentemente?'))return;if(_epiCache.docs)_epiCache.docs=_epiCache.docs.filter(r=>r.id!==docId);renderEpiTableFromCache();try{await dbCloud.collection('logistica_epi_registros').doc(docId).delete();}catch(e){alert('Erro:'+e.message);_epiCache.docs=null;renderEpiTable(true);}};
 window.filterEpiTable=function(){const q=(document.getElementById('epiSearchInput').value||'').toLowerCase();document.querySelectorAll('#tbEpi tr').forEach(r=>{r.style.display=q===''||r.textContent.toLowerCase().includes(q)?'':'none';});};
-window.exportEpiExcel=async function(){try{let docs=_epiCache.docs;if(!docs){ docs = (await window.getFromDB('epi_registros') || []); docs.sort(function(a,b){return (b.dataAprovTs||0)-(a.dataAprovTs||0);}); }if(!docs.length){alert('Sem registros.');return;}const rows=[['Colaborador','Matricula','Blusa','Calca','Bermuda','Casaco','Bota','Luva','Cinta','Data Aprovacao','Status','Data Entrega']];docs.forEach(x=>rows.push([x.nome,x.mat,x.blusa,x.calca,x.bermuda,x.casaco,x.bota,x.luva,x.cinta,x.dataAprov||'',x.status==='entregue'?'Entregue':'Aguardando',x.dataEntrega||'']));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Uniforme_EPI');XLSX.writeFile(wb,'Uniforme_EPI_'+new Date().toISOString().slice(0,10)+'.xlsx');}catch(e){alert('Erro:'+e.message);}};
+window.exportEpiExcel=async function(){try{let docs=_epiCache.docs;if(!docs){const snap=await dbCloud.collection('logistica_epi_registros').get();docs=[];snap.forEach(d=>docs.push(d.data()));docs.sort((a,b)=>(b.dataAprovTs||0)-(a.dataAprovTs||0));}if(!docs.length){alert('Sem registros.');return;}const rows=[['Colaborador','Matricula','Blusa','Calca','Bermuda','Casaco','Bota','Luva','Cinta','Data Aprovacao','Status','Data Entrega']];docs.forEach(x=>rows.push([x.nome,x.mat,x.blusa,x.calca,x.bermuda,x.casaco,x.bota,x.luva,x.cinta,x.dataAprov||'',x.status==='entregue'?'Entregue':'Aguardando',x.dataEntrega||'']));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Uniforme_EPI');XLSX.writeFile(wb,'Uniforme_EPI_'+new Date().toISOString().slice(0,10)+'.xlsx');}catch(e){alert('Erro:'+e.message);}};
 
 // Dashboard RH
-window.renderDashboardRH = async function() {
-    var spinIcon = document.getElementById('drh-spin-icon');
-    if(spinIcon) spinIcon.className = 'fas fa-circle-notch fa-spin';
-    var btn = document.querySelector('[onclick*="renderDashboardRH"]');
-    if(btn) { btn.disabled = true; }
-    try {
-        var ano = new Date().getFullYear();
-        var s = function(id,v){ var e=document.getElementById(id); if(e) e.textContent=v; };
-        var sh = function(id,v){ var e=document.getElementById(id); if(e) e.innerHTML=v; };
-        s('drh-ano-label', ano);
-
-        // Fetch from Firebase
-        var [dRHfb, rhDataFb, pendInbox, epiRegs] = await Promise.all([
-            window.getFromDB('dRH').catch(()=>null),
-            window.getFromDB('rhData').catch(()=>null),
-            window.getFromDB('feriasInbox').catch(function(){return null;}),
-            window.getFromDB('epi_registros').catch(function(){return null;})
-        ]);
-        var lista = (dRHfb && dRHfb.length) ? dRHfb : (window.dRH || []);
-        var rh    = (rhDataFb && Object.keys(rhDataFb).length) ? rhDataFb : (window.rhData || {});
-        var hoje  = new Date(); hoje.setHours(0,0,0,0);
-
-        if(!lista.length) {
-            sh('ai-colab-insight','<span style="color:#e74c3c;">⚠️ Nenhum colaborador encontrado. Importe o quadro de colaboradores primeiro.</span>');
-            return;
-        }
-
-        // ── Colaboradores ──────────────────────────────
-        var ativos=0,inativos=0,entradasAno=0,sups=0,lids=0,ops=0,outros=0;
-        lista.forEach(function(c) {
-            var mat  = c['Matrícula']||c['Matricula']||c['MATRICULA']||'';
-            var func = (c['Função']||c['Funcao']||c['FUNÇÃO']||'').toUpperCase();
-            var st   = (c['Status']||c['STATUS']||'ATIVO').toUpperCase();
-            var rhM  = rh[mat]||{};
-            var sf   = (rhM.statusManual&&rhM.statusManual!=='AUTO') ? rhM.statusManual.toUpperCase() : st;
-            if(sf==='INATIVO'){inativos++;return;}
-            ativos++;
-            if(func.includes('SUPERVISOR')||func.includes('SUPERVISORA')) sups++;
-            else if(func.includes('LIDER')||func.includes('LÍDER')) lids++;
-            else if(func.includes('OPERADOR')||func.includes('SEPARADOR')) ops++;
-            else outros++;
-            var admRaw = c['Admissão']||c['Admissao']||c['ADMISSÃO']||'';
-            var admY = 0;
-            if(admRaw.includes('/')) admY=parseInt(admRaw.split('/')[2]||0);
-            else if(admRaw.includes('-')) admY=parseInt(admRaw.split('-')[0]||0);
-            if(admY===ano) entradasAno++;
-        });
-        var turnover = inativos>0 ? ((inativos/Math.max(1,ativos+inativos))*100).toFixed(1) : '0.0';
-        var pendRep  = (typeof pendenciasRH!=='undefined') ? pendenciasRH.length : 0;
-
-        s('drh-ativos',    ativos);
-        s('drh-entradas',  entradasAno);
-        s('drh-saidas',    inativos);
-        s('drh-turnover',  turnover+'%');
-        s('drh-reposicoes',pendRep);
-
-        // Breakdown bars
-        var total = Math.max(1,ativos);
-        s('cnt-sups',sups); s('cnt-lids',lids); s('cnt-ops',ops); s('cnt-outros',outros);
-        var sb=document.getElementById('bar-sups'); if(sb) sb.style.width=(sups/total*100)+'%';
-        var lb=document.getElementById('bar-lids'); if(lb) lb.style.width=(lids/total*100)+'%';
-        var ob=document.getElementById('bar-ops');  if(ob) ob.style.width=(ops/total*100)+'%';
-        var xb=document.getElementById('bar-outros');if(xb) xb.style.width=(outros/total*100)+'%';
-
-        // Quadro chart (donut)
-        window._drhCharts = window._drhCharts || {};
-        var cq = document.getElementById('chartQuadro');
-        if(cq) {
-            if(window._drhCharts.quadro) window._drhCharts.quadro.destroy();
-            window._drhCharts.quadro = new Chart(cq.getContext('2d'), {
-                type:'doughnut',
-                data:{labels:['Supervisores','Líderes','Operadores','Outros'],
-                      datasets:[{data:[sups,lids,ops,outros],backgroundColor:['#6c5ce7','#00b894','#74b9ff','#a29bfe'],borderWidth:2}]},
-                options:{responsive:true,plugins:{legend:{position:'bottom',labels:{font:{size:10}}}},cutout:'65%'}
-            });
-        }
-
-        // ── Absenteísmo ────────────────────────────────
-        var totalAbs=0,diasAbs=0,motCount={},pesCount={},absMeses={};
-        lista.forEach(function(c) {
-            var mat  = c['Matrícula']||c['Matricula']||c['MATRICULA']||'';
-            var nome = c['Nome']||c['NOME']||mat;
-            ((rh[mat]||{}).faltas||[]).forEach(function(f) {
-                totalAbs++;
-                var dias=parseInt(f.dias)||1; diasAbs+=dias;
-                var mot=f.motivo||'Outro';
-                motCount[mot]=(motCount[mot]||0)+dias;
-                pesCount[nome]=(pesCount[nome]||0)+dias;
-                var mk=(f.data||'').substring(0,7)||'N/A';
-                absMeses[mk]=(absMeses[mk]||0)+dias;
-            });
-        });
-        var topMot = Object.keys(motCount).sort(function(a,b){return motCount[b]-motCount[a];})[0]||'—';
-        var taxaAbs = ativos>0 ? ((diasAbs/(ativos*22))*100).toFixed(2) : '0.00';
-        s('drh-abs-total', totalAbs);
-        s('drh-abs-dias',  diasAbs);
-        s('drh-abs-motivo',topMot.length>22?topMot.slice(0,20)+'...':topMot);
-        s('drh-abs-taxa',  taxaAbs+'%');
-
-        // Abs motivo chart
-        var cam = document.getElementById('chartAbsMotivo');
-        if(cam && Object.keys(motCount).length) {
-            if(window._drhCharts.absMotivo) window._drhCharts.absMotivo.destroy();
-            var amLabels=Object.keys(motCount).sort(function(a,b){return motCount[b]-motCount[a];}).slice(0,8);
-            window._drhCharts.absMotivo = new Chart(cam.getContext('2d'), {
-                type:'bar',
-                data:{labels:amLabels,datasets:[{label:'Dias',data:amLabels.map(function(k){return motCount[k];}),backgroundColor:'#e1755499',borderColor:'#e17055',borderWidth:1}]},
-                options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{font:{size:9}}},y:{ticks:{font:{size:9}}}}}
-            });
-        }
-
-        sh('ai-abs-insight','📊 Taxa de absenteísmo: <strong>'+taxaAbs+'%</strong>'+(parseFloat(taxaAbs)>4?' 🚨 Acima do limite (4%). Principal motivo: <strong>'+topMot+'</strong>.':parseFloat(taxaAbs)>2?' ⚡ Moderada. Monitorar.':' ✅ Dentro do padrão.'));
-
-        // ── Férias ─────────────────────────────────────
-        var fAtivas=0,fVencidas=0,em30=0;
-        lista.forEach(function(c) {
-            var mat=c['Matrícula']||c['Matricula']||c['MATRICULA']||'';
-            var r=rh[mat]||{};
-            if(r.feriasInicio&&r.feriasFim){
-                var fi=new Date(r.feriasInicio+'T00:00:00'),ff=new Date(r.feriasFim+'T00:00:00');
-                if(hoje>=fi&&hoje<=ff) fAtivas++;
-            }
-            if(r.limiteFerias){
-                var lim=new Date(r.limiteFerias+'T00:00:00'),d=(lim-hoje)/86400000;
-                if(d<0&&!r.feriasInicio) fVencidas++;
-                else if(d>=0&&d<=30&&!r.feriasInicio) em30++;
-            }
-        });
-        var pendFer = pendInbox ? pendInbox.size : 0;
-        s('drh-ferias-ativas',  fAtivas);
-        s('drh-ferias-vencidas',fVencidas);
-        s('drh-ferias-ativas2', fAtivas);
-        s('drh-ferias-vencidas2',fVencidas);
-        s('drh-ferias-a-vencer',em30);
-        s('drh-ferias-pendentes',pendFer);
-        var insFer='';
-        if(fVencidas>0) insFer+='🚨 <strong>'+fVencidas+' vencida(s)</strong> — risco legal. ';
-        if(em30>0)      insFer+='⏰ '+em30+' a vencer em 30 dias. ';
-        if(fAtivas>0)   insFer+='🌴 '+fAtivas+' em gozo. ';
-        if(pendFer>0)   insFer+='📬 '+pendFer+' pendência(s). ';
-        if(!insFer)     insFer='✅ Sem irregularidades de férias.';
-        sh('ai-ferias-insight',insFer);
-
-        // ── Banco de Horas ──────────────────────────────
-        var totPos=0,totNeg=0,qtdPos=0,qtdNeg=0,bhArr=[];
-        Object.keys(rh).forEach(function(mat) {
-            var bh=typeof rh[mat].banco==='number'?rh[mat].banco:0;
-            var emp=lista.find(function(c){return (c['Matrícula']||c['Matricula']||c['MATRICULA']||'')===mat;});
-            var nome=emp?(emp['Nome']||emp['NOME']||mat):mat;
-            if(bh>0){totPos+=bh;qtdPos++;} else if(bh<0){totNeg+=Math.abs(bh);qtdNeg++;}
-            if(Math.abs(bh)>0) bhArr.push({nome:nome,bh:bh});
-        });
-        bhArr.sort(function(a,b){return Math.abs(b.bh)-Math.abs(a.bh);});
-        var fmtBH=function(h){var a=Math.abs(h);return(h<0?'-':'+')+String(Math.floor(a)).padStart(2,'0')+':'+String(Math.round((a-Math.floor(a))*60)).padStart(2,'0');};
-        s('drh-bh-positivo',fmtBH(totPos)); s('drh-bh-negativo',fmtBH(-totNeg));
-        s('drh-bh-qtd-pos',qtdPos+' pessoas'); s('drh-bh-qtd-neg',qtdNeg+' pessoas');
-
-        var cbh=document.getElementById('chartBancoHoras');
-        if(cbh&&bhArr.length) {
-            if(window._drhCharts.bh) window._drhCharts.bh.destroy();
-            var top8=bhArr.slice(0,8);
-            window._drhCharts.bh=new Chart(cbh.getContext('2d'),{
-                type:'bar',
-                data:{labels:top8.map(function(x){return x.nome.split(' ')[0];}),
-                      datasets:[{label:'Saldo (h)',data:top8.map(function(x){return parseFloat(x.bh.toFixed(2));}),
-                          backgroundColor:top8.map(function(x){return x.bh>=0?'rgba(0,184,148,.7)':'rgba(225,112,85,.7)';})}]},
-                options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{ticks:{font:{size:9}}},x:{ticks:{font:{size:9}}}}}
-            });
-        }
-
-        // ── Ponto ──────────────────────────────────────
-        var pTotal=0,pFaltas=0,pMarcacoes=0,pOk=0,pontoTipos={};
-        Object.keys(rh).forEach(function(mat) {
-            ((rh[mat]||{}).ponto||[]).forEach(function(p) {
-                pTotal++;
-                var tp=(p.tipo||'').toLowerCase(),ac=(p.acao||'').toLowerCase();
-                if(tp.includes('falta sem')) pFaltas++;
-                if(tp.includes('marcação')||tp.includes('marcacao')) pMarcacoes++;
-                if(ac.includes('justificado')||ac.includes('arquivado')) pOk++;
-                pontoTipos[p.tipo||'Outro']=(pontoTipos[p.tipo||'Outro']||0)+1;
-            });
-        });
-        s('drh-ponto-total',pTotal); s('drh-ponto-faltas',pFaltas);
-        s('drh-ponto-marcacoes',pMarcacoes); s('drh-ponto-ok',pOk);
-        var cpt=document.getElementById('chartPontoTipo');
-        if(cpt&&Object.keys(pontoTipos).length) {
-            if(window._drhCharts.pontoTipo) window._drhCharts.pontoTipo.destroy();
-            var ptLabels=Object.keys(pontoTipos).slice(0,8);
-            window._drhCharts.pontoTipo=new Chart(cpt.getContext('2d'),{
-                type:'bar',data:{labels:ptLabels,datasets:[{label:'Qtd',data:ptLabels.map(function(k){return pontoTipos[k];}),backgroundColor:'#a29bfe99',borderColor:'#6c5ce7',borderWidth:1}]},
-                options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{font:{size:9}}},y:{ticks:{font:{size:9}}}}}
-            });
-        }
-        sh('ai-ponto-insight',pTotal>0?'🗓 <strong>'+pTotal+' ocorrência(s)</strong>'+(pFaltas>5?' ⚠️ '+pFaltas+' faltas sem justificativa.':''):'Nenhuma ocorrência de ponto registada.');
-
-        // ── EPI ────────────────────────────────────────
-        var epiTotal=0,epiEntg=0,epiPend=0;
-        if(epiRegs) epiRegs.forEach(function(d){epiTotal++;var st=d.data().status;if(st==='entregue')epiEntg++;else epiPend++;});
-        s('drh-epi-total',epiTotal); s('drh-epi-entregues',epiEntg); s('drh-epi-pendentes',epiPend);
-        var ce=document.getElementById('chartEpiStatus');
-        if(ce&&epiTotal>0){
-            if(window._drhCharts.epi) window._drhCharts.epi.destroy();
-            window._drhCharts.epi=new Chart(ce.getContext('2d'),{
-                type:'doughnut',data:{labels:['Entregue','Parcial','Pendente'],
-                    datasets:[{data:[epiEntg,epiTotal-epiEntg-epiPend,epiPend],backgroundColor:['#00b894','#fdcb6e','#e17055'],borderWidth:2}]},
-                options:{responsive:true,cutout:'60%',plugins:{legend:{position:'bottom',labels:{font:{size:9}}}}}
-            });
-        }
-
-        // ── IA Insight geral ────────────────────────────
-        var insights=[];
-        if(parseFloat(turnover)>10) insights.push('⚠️ Turnover acima de 10% ('+turnover+'%) — investigar causas de desligamento');
-        if(fVencidas>0) insights.push('🚨 '+fVencidas+' colaborador(es) com férias vencidas — risco trabalhista');
-        if(parseFloat(taxaAbs)>4)  insights.push('📉 Absenteísmo em '+taxaAbs+'% — acima do limite de 4%');
-        if(qtdNeg>ativos*0.25)     insights.push('🕒 '+qtdNeg+' colaboradores com banco de horas negativo');
-        if(em30>0)                 insights.push('📅 '+em30+' férias a vencer nos próximos 30 dias');
-        if(pendRep>0)              insights.push('👤 '+pendRep+' vaga(s) em aberto para reposição');
-        if(epiPend>0)              insights.push('📦 '+epiPend+' EPI(s) aguardando entrega física');
-        if(!insights.length)       insights.push('✅ Todos os indicadores dentro do padrão. Quadro saudável.');
-        sh('ai-colab-insight','<strong><i class="fas fa-robot"></i> Diagnóstico IA:</strong> '
-            + insights.map(function(x){return '<div style="padding:4px 0;border-bottom:1px solid #eee;">'+x+'</div>';}).join(''));
-
-        // ── IA Notification cards ───────────────────────
-        window._iaInsights = insights;
-        var badge=document.getElementById('ia-notif-badge');
-        if(badge) badge.textContent=insights.length;
-        var body=document.getElementById('ia-notif-body');
-        if(body) body.innerHTML=insights.map(function(x){return '<div class="ia-notif-item"><div class="ia-tag"><i class="fas fa-lightbulb"></i> Alerta RH</div>'+x+'</div>';}).join('');
-
-        // Timestamp
-        var tsEl=document.getElementById('drh-ultima-atualizacao');
-        if(tsEl) tsEl.textContent='Atualizado às '+new Date().toLocaleTimeString('pt-BR');
-
-    } catch(e) { console.error('Dashboard RH:', e); }
-    finally {
-        if(spinIcon) spinIcon.className='fas fa-sync-alt';
-        if(btn) btn.disabled=false;
-    }
-};
+window.renderDashboardRH=async function(){const btn=document.querySelector('[onclick*="renderDashboardRH"]');if(btn){btn.disabled=true;btn.innerHTML='<i class="fas fa-circle-notch fa-spin"></i> Actualizando...';}try{const ano=new Date().getFullYear();setDRH('drh-ano-label',ano);const[dRHfb,rhDataFb,pendInbox,epiRegs]=await Promise.all([window.getFromDB('dRH').catch(()=>null),window.getFromDB('rhData').catch(()=>null),dbCloud.collection('logistica_ferias_inbox').where('status','==','PENDENTE').get().catch(()=>null),dbCloud.collection('logistica_epi_registros').get().catch(()=>null)]);const lista=(dRHfb&&dRHfb.length)?dRHfb:(window.dRH||[]);const rh=rhDataFb||window.rhData||{};const hoje=new Date();hoje.setHours(0,0,0,0);let ativos=0,inativos=0,entradasAno=0,supCount=0,liderCount=0,opCount=0;lista.forEach(c=>{const mat=c['Matrícula']||c['Matricula']||c['MATRICULA']||'';const func=(c['Função']||c['Funcao']||c['FUNÇÃO']||'').toUpperCase();const s=(c['Status']||c['STATUS']||'ATIVO').toUpperCase();const rhM=rh[mat]||{};const sf=(rhM.statusManual&&rhM.statusManual!=='AUTO')?rhM.statusManual.toUpperCase():s;if(sf==='INATIVO'){inativos++;return;}ativos++;if(func.includes('SUPERVISOR'))supCount++;else if(func.includes('LIDER')||func.includes('LÍDER'))liderCount++;else opCount++;const admRaw=c['Admissão']||c['Admissao']||c['ADMISSÃO']||'';let admY=0;if(admRaw.includes('/'))admY=parseInt(admRaw.split('/')[2]||0);else if(admRaw.includes('-'))admY=parseInt(admRaw.split('-')[0]||0);if(admY===ano)entradasAno++;});const turnover=inativos>0?((inativos/Math.max(1,ativos+inativos))*100).toFixed(1):'0.0';const pendRep=(typeof pendenciasRH!=='undefined')?pendenciasRH.length:0;setDRH('drh-entradas',entradasAno);setDRH('drh-saidas',inativos);setDRH('drh-turnover',turnover+'%');setDRH('drh-ativos',ativos);setDRH('drh-reposicoes',pendRep);let insC='📊 <strong>'+ativos+' ativos</strong> | '+supCount+' sup | '+liderCount+' líd | '+opCount+' op. ';insC+=parseFloat(turnover)>15?'🚨 Turnover elevado ('+turnover+'%).':parseFloat(turnover)>8?'⚡ Moderado ('+turnover+'%).':'✅ Controlado ('+turnover+'%).';if(pendRep>0)insC+=' 🔴 <strong>'+pendRep+' vaga(s) em reposição.</strong>';setDRH('ai-colab-insight',insC,true);let fAtivas=0,fVencidas=0,em30=0;lista.forEach(c=>{const mat=c['Matrícula']||c['Matricula']||c['MATRICULA']||'';const r=rh[mat]||{};if(r.feriasInicio&&r.feriasFim){const fi=new Date(r.feriasInicio+'T00:00:00'),ff=new Date(r.feriasFim+'T00:00:00');if(hoje>=fi&&hoje<=ff)fAtivas++;}if(r.limiteFerias){const lim=new Date(r.limiteFerias+'T00:00:00'),d=(lim-hoje)/86400000;if(d<0&&!r.feriasInicio)fVencidas++;else if(d>=0&&d<=30&&!r.feriasInicio)em30++;}});const pendFer=pendInbox?pendInbox.size:0;setDRH('drh-ferias-ativas',fAtivas);setDRH('drh-ferias-vencidas',fVencidas);setDRH('drh-ferias-a-vencer',em30);setDRH('drh-ferias-pendentes',pendFer);let insFer='';if(fVencidas>0)insFer+='🚨 <strong>'+fVencidas+' vencidas</strong> — risco legal. ';if(em30>0)insFer+='⏰ '+em30+' a vencer em 30 dias. ';if(fAtivas>0)insFer+='🌴 '+fAtivas+' em gozo. ';if(pendFer>0)insFer+='📬 '+pendFer+' pendente(s). ';if(!insFer)insFer='✅ Sem irregularidades.';setDRH('ai-ferias-insight',insFer,true);let totPos=0,totNeg=0,qtdPos=0,qtdNeg=0;Object.keys(rh).forEach(mat=>{const bh=typeof rh[mat].banco==='number'?rh[mat].banco:0;if(bh>0){totPos+=bh;qtdPos++;}else if(bh<0){totNeg+=Math.abs(bh);qtdNeg++;}});const fmtBH=h=>{const a=Math.abs(h);return(h<0?'-':'+')+String(Math.floor(a)).padStart(2,'0')+':'+String(Math.round((a-Math.floor(a))*60)).padStart(2,'0');};setDRH('drh-bh-positivo',fmtBH(totPos));setDRH('drh-bh-negativo',fmtBH(-totNeg));setDRH('drh-bh-qtd-pos',qtdPos);setDRH('drh-bh-qtd-neg',qtdNeg);setDRH('ai-bh-insight',(totPos>100?'⚠️ Saldo positivo elevado. ':qtdNeg>ativos*0.2?'🔴 +20% com saldo negativo. ':'')+'✅ OK',true);let totalAbs=0,diasAbs=0,motCount={},pesCount={},absMeses={};lista.forEach(c=>{const mat=c['Matrícula']||c['Matricula']||c['MATRICULA']||'';const nome=c['Nome']||c['NOME']||mat;((rh[mat]||{}).faltas||[]).forEach(f=>{totalAbs++;const dias=parseInt(f.dias)||1;diasAbs+=dias;motCount[f.motivo||'Outro']=(motCount[f.motivo||'Outro']||0)+dias;pesCount[nome]=(pesCount[nome]||0)+dias;const mk=(f.data||'').substring(0,7)||'N/A';absMeses[mk]=(absMeses[mk]||0)+dias;});});const topMot=Object.keys(motCount).sort((a,b)=>motCount[b]-motCount[a])[0]||'—';const topPes=Object.keys(pesCount).sort((a,b)=>pesCount[b]-pesCount[a])[0]||'—';setDRH('drh-abs-total',totalAbs);setDRH('drh-abs-dias',diasAbs);setDRH('drh-abs-motivo',topMot.length>22?topMot.slice(0,20)+'...':topMot);setDRH('drh-abs-pessoa',topPes.length>22?topPes.slice(0,20)+'...':topPes);renderChartAbsMotivo(motCount);renderChartAbsMensal2(absMeses);const taxa=ativos>0?((diasAbs/(ativos*22))*100).toFixed(1):0;setDRH('ai-abs-insight','📊 Taxa: <strong>'+taxa+'%</strong>. '+(parseFloat(taxa)>4?'🚨 Acima do limite. Motivo: <strong>'+topMot+'</strong>.':parseFloat(taxa)>2?'⚠️ Moderada.':'✅ Ok.'),true);let pTotal=0,pFaltas=0,pMarcacoes=0,pOk=0,pontoTipos={};Object.keys(rh).forEach(mat=>{((rh[mat]||{}).ponto||[]).forEach(p=>{pTotal++;const tp=(p.tipo||'').toLowerCase(),ac=(p.acao||'').toLowerCase();if(tp.includes('falta sem'))pFaltas++;if(tp.includes('marcação')||tp.includes('marcacao'))pMarcacoes++;if(ac.includes('justificado')||ac.includes('arquivado'))pOk++;pontoTipos[p.tipo||'Outro']=(pontoTipos[p.tipo||'Outro']||0)+1;});});setDRH('drh-ponto-total',pTotal);setDRH('drh-ponto-faltas',pFaltas);setDRH('drh-ponto-marcacoes',pMarcacoes);setDRH('drh-ponto-ok',pOk);renderChartPontoTipo(pontoTipos);setDRH('ai-ponto-insight',pTotal>0?'🗓 <strong>'+pTotal+' ocorrência(s)</strong>.'+(pFaltas>5?' ⚠️ Faltas: '+pFaltas+'.':''):'Nenhuma ocorrência.',true);let epiTotal=0,epiEntg=0;if(epiRegs)epiRegs.forEach(d=>{epiTotal++;if(d.data().status==='entregue')epiEntg++;});setDRH('drh-epi-total',epiTotal);setDRH('drh-epi-entregues',epiEntg);setDRH('drh-epi-pendentes',epiTotal-epiEntg);}catch(e){console.error('Dashboard RH:',e);}finally{if(btn){btn.disabled=false;btn.innerHTML='<i class="fas fa-sync-alt"></i> Atualizar Painel';}}};
 function renderChartAbsMensal(x){}
 function renderChartAbsMensal2(meses){const c=document.getElementById('chartAbsMensal');if(!c)return;if(window._dashCharts&&window._dashCharts.absMensal)window._dashCharts.absMensal.destroy();const sorted=Object.keys(meses).sort();if(!sorted.length)return;if(!window._dashCharts)window._dashCharts={};window._dashCharts.absMensal=new Chart(c.getContext('2d'),{type:'bar',data:{labels:sorted,datasets:[{label:'Dias',data:sorted.map(k=>meses[k]),backgroundColor:'#e74c3c99',borderColor:'#e74c3c',borderWidth:1}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{font:{size:10}}}}}});}
 function renderChartPontoTipo(tipos){const c=document.getElementById('chartPontoTipo');if(!c)return;if(window._dashCharts&&window._dashCharts.pontoTipo)window._dashCharts.pontoTipo.destroy();if(!tipos||!Object.keys(tipos).length)return;if(!window._dashCharts)window._dashCharts={};const labels=Object.keys(tipos);window._dashCharts.pontoTipo=new Chart(c.getContext('2d'),{type:'bar',data:{labels,datasets:[{label:'Ocorrencias',data:labels.map(k=>tipos[k]),backgroundColor:'#8e44ad99',borderColor:'#8e44ad',borderWidth:1}]},options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{font:{size:10}}}}}});}
@@ -2492,622 +2091,8 @@ window.subTabAbs = function(aba) {
     }
 };
 
-
-// ================================================================
-// MÓDULO AUDITORIA — Conferência de Inventário
-// ================================================================
-var _auditDB        = [];   // {endereco, produto, ean, desc, saldo}
-var _auditEnderecoDB= [];   // localizadores do inventário de picking
-var _auditMapProdEnd= {};   // produto -> endereço correto
-var _auditMapEanEnd = {};   // ean -> endereço correto
-var _auditMapEndProd= {};   // endereço -> produto esperado
-var _auditSessoes   = [];
-var _auditSessaoAtual = null;
-var _auditBipState  = 'end';
-var _auditEndLido   = '';
-
-// ── Importar Estoque Guarda (EAN) ─────────────────────────────
-window.importarEstoqueGuarda = async function(input) {
-    var file = input.files[0]; if(!file) return;
-    try {
-        var rows = await _auditLerXLSX(file);
-        var dados = [];
-        rows.forEach(function(r) {
-            var keys = Object.keys(r);
-            function col() {
-                // Try exact match first, then partial
-                for(var a=0;a<arguments.length;a++) {
-                    var arg = arguments[a].toLowerCase().replace(/[\s_\-]/g,'');
-                    for(var j=0;j<keys.length;j++) {
-                        var k = keys[j].toLowerCase().replace(/[\s_\-]/g,'');
-                        if(k===arg) return String(r[keys[j]]||'').trim();
-                    }
-                }
-                for(var a=0;a<arguments.length;a++) {
-                    var arg = arguments[a].toLowerCase().replace(/[\s_\-]/g,'');
-                    for(var j=0;j<keys.length;j++) {
-                        var k = keys[j].toLowerCase().replace(/[\s_\-]/g,'');
-                        if(k.includes(arg)||arg.includes(k)) return String(r[keys[j]]||'').trim();
-                    }
-                }
-                return '';
-            }
-            var end  = col('picking','endereço','endereco','localizador','local','end');
-            var prod = col('produto','codigo','cod','material','sku','item');
-            var ean  = col('ean','codbarras','barcode','codigodebarras','codbarra','gtin');
-            var desc = col('descricao','descrição','desc','nome');
-            var saldo = col('saldo','qtd','quantidade','estoque');
-            if(!end || end==='XXX-XX-XX') return; // Produto sem endereço válido
-            if(!prod && !ean) return;
-            dados.push({ endereco: end.toUpperCase(), produto: String(prod).toUpperCase(), ean: String(ean).toUpperCase(), desc: desc, saldo: saldo });
-        });
-        // Eliminar duplicados (mesmo endereço + produto)
-        var visto = {};
-        dados = dados.filter(function(d){
-            var k = d.endereco+'|'+d.produto;
-            if(visto[k]) return false;
-            visto[k] = true; return true;
-        });
-        _auditDB = dados;
-        // Construir mapa produto->endereço_correto e mapa ean->endereço_correto
-        _auditMapProdEnd = {};
-        _auditMapEanEnd  = {};
-        dados.forEach(function(d){
-            if(d.produto) _auditMapProdEnd[d.produto] = d.endereco;
-            if(d.ean)     _auditMapEanEnd[d.ean]      = d.endereco;
-        });
-        try { await window.saveToDB('audit_estoque_guarda', {data: dados, ts: Date.now(), arquivo: file.name}); } catch(e){}
-        var el = document.getElementById('status-estoque-guarda');
-        if(el) el.innerHTML = '<span style="color:#27ae60;font-weight:700;">✅ '+dados.length+' itens com endereço — '+file.name+'</span>';
-        auditGestorRefresh();
-        if(typeof showToast==='function') showToast('✅ Estoque Guarda: '+dados.length+' itens importados!', 'success');
-    } catch(e) { alert('Erro ao importar estoque: '+e.message); }
-    input.value='';
-};
-
-// ── Importar Endereços Picking ────────────────────────────────
-window.importarEnderecosPicking = async function(input) {
-    var file = input.files[0]; if(!file) return;
-    try {
-        var rows = await _auditLerXLSX(file);
-        // Colunas do arquivo: Produto, Descrição, TipoLocal, CódLocalizador, Corredor, Modulo, Box, Ativo, Localizador, Setor, NomeSetor, Saldo
-        var enderecos = [];
-        rows.forEach(function(r) {
-            var keys = Object.keys(r);
-            function col() {
-                for(var a=0;a<arguments.length;a++) {
-                    var arg = arguments[a].toLowerCase().replace(/[\s_\-\.]/g,'');
-                    for(var j=0;j<keys.length;j++) {
-                        var k = keys[j].toLowerCase().replace(/[\s_\-\.]/g,'');
-                        if(k===arg) return String(r[keys[j]]||'').trim().toUpperCase();
-                    }
-                }
-                for(var a=0;a<arguments.length;a++) {
-                    var arg = arguments[a].toLowerCase().replace(/[\s_\-\.]/g,'');
-                    for(var j=0;j<keys.length;j++) {
-                        var k = keys[j].toLowerCase().replace(/[\s_\-\.]/g,'');
-                        if(k.includes(arg)||arg.includes(k)) return String(r[keys[j]]||'').trim().toUpperCase();
-                    }
-                }
-                return '';
-            }
-            var loc = col('localizador','endereco','endereço','local','codigo','picking','rua','posicao','posição','codlocalizador');
-            var prod = col('produto','codigo','cod','material','sku');
-            var desc = col('descrição','descricao','desc','nome');
-            var saldo = col('saldo','qtd','quantidade');
-            if(loc) enderecos.push({ endereco: loc, produto: String(prod||'').toUpperCase(), desc: desc, saldo: saldo });
-        });
-        // Unique endereços
-        _auditEnderecoDB = [...new Set(enderecos.map(function(e){return e.endereco;}))];
-        // Mapa localiz -> produto esperado (para cross-reference)
-        _auditMapEndProd = {};
-        enderecos.forEach(function(e){ if(e.endereco) _auditMapEndProd[e.endereco] = { produto: e.produto, desc: e.desc, saldo: e.saldo }; });
-        try { await window.saveToDB('audit_enderecos_picking', {data: _auditEnderecoDB, mapa: _auditMapEndProd, ts: Date.now(), arquivo: file.name}); } catch(e){}
-        var el = document.getElementById('status-enderecos-picking');
-        if(el) el.innerHTML = '<span style="color:#8e44ad;font-weight:700;">✅ '+_auditEnderecoDB.length+' endereços importados — '+file.name+'</span>';
-        auditGestorRefresh();
-        if(typeof showToast==='function') showToast('✅ Endereços Picking: '+_auditEnderecoDB.length+' localizadores!', 'success');
-    } catch(e) { alert('Erro ao importar endereços: '+e.message); }
-    input.value='';
-};
-
-function _auditLerXLSX(file) {
-    return new Promise(function(resolve,reject) {
-        var r = new FileReader();
-        r.onload = function(e) {
-            try {
-                var wb = XLSX.read(e.target.result,{type:'binary'});
-                var ws = wb.Sheets[wb.SheetNames[0]];
-                resolve(XLSX.utils.sheet_to_json(ws,{defval:''}));
-            } catch(err) { reject(err); }
-        };
-        r.onerror = reject;
-        r.readAsBinaryString(file);
-    });
-}
-
-// ── Iniciar Sessão Operador ────────────────────────────────────
-window.auditIniciarSessao = function() {
-    var nome  = (document.getElementById('audit-op-nome').value||'').trim();
-    var tipo  = document.getElementById('audit-tipo-tarefa').value;
-    if(!nome) { alert('Informe seu nome ou matrícula.'); return; }
-
-    // Carrega dados do IndexedDB se não tiver em memória
-    if(!_auditDB.length && !_auditEnderecoDB.length) {
-        Promise.all([
-            window.getFromDB('audit_estoque_guarda').catch(function(){return null;}),
-            window.getFromDB('audit_enderecos_picking').catch(function(){return null;})
-        ]).then(function(results) {
-            if(results[0]&&results[0].data) {
-                _auditDB = results[0].data;
-                _auditMapProdEnd={}; _auditMapEanEnd={};
-                _auditDB.forEach(function(d){
-                    if(d.produto) _auditMapProdEnd[d.produto]=d.endereco;
-                    if(d.ean)     _auditMapEanEnd[d.ean]=d.endereco;
-                });
-            }
-            if(results[1]&&results[1].data) {
-                _auditEnderecoDB = results[1].data;
-                if(results[1].mapa) _auditMapEndProd = results[1].mapa;
-            }
-            _auditIniciarSessaoInterno(nome, tipo);
-        });
-    } else {
-        _auditIniciarSessaoInterno(nome, tipo);
-    }
-};
-
-function _auditIniciarSessaoInterno(nome, tipo) {
-    if(tipo === 'todos_enderecos') {
-        document.getElementById('audit-login-panel').style.display='none';
-        document.getElementById('audit-lista-panel').style.display='';
-        auditCarregarListaTodos();
-        return;
-    }
-
-    _auditSessaoAtual = {
-        operador: nome, tipo: tipo,
-        inicio: new Date().toISOString(),
-        acertos: 0, erros: 0,
-        apontamentos: []
-    };
-    window.qtdAcertos = 0; window.qtdErros = 0;
-    _auditBipState = 'end'; _auditEndLido = '';
-
-    document.getElementById('audit-login-panel').style.display='none';
-    document.getElementById('audit-bip-panel').style.display='';
-    document.getElementById('audit-acertos').textContent='0';
-    document.getElementById('audit-erros').textContent='0';
-    document.getElementById('audit-log').innerHTML='';
-    document.getElementById('audit-feedback').textContent='Aguardando leitura...';
-    document.getElementById('audit-feedback').style.background='#f4f7f6';
-
-    var endInput = document.getElementById('audit-end');
-    var prodInput = document.getElementById('audit-prod');
-    if(endInput) { endInput.value=''; endInput.disabled=false; endInput.focus(); }
-    if(prodInput) { prodInput.value=''; prodInput.disabled=true; }
-    auditStepHighlight('end');
-}
-
-// ── Step highlight ─────────────────────────────────────────────
-window.auditStepHighlight = function(step) {
-    var se = document.getElementById('step-end');
-    var sp = document.getElementById('step-prod');
-    if(step==='end') {
-        if(se) se.style.background='#2980b9';
-        if(sp) { sp.style.background='#e9ecef'; sp.style.color='#999'; }
-    } else {
-        if(sp) { sp.style.background='#27ae60'; sp.style.color='white'; }
-        if(se) { se.style.background='#e9ecef'; se.style.color='#999'; }
-    }
-};
-
-// ── Bip Endereço ──────────────────────────────────────────────
-window.auditBipEnd = function() {
-    var input = document.getElementById('audit-end');
-    var val = (input.value||'').trim().toUpperCase();
-    if(!val) return;
-    _auditEndLido = val;
-    _auditBipState = 'prod';
-    auditStepHighlight('prod');
-    var fb = document.getElementById('audit-feedback');
-    fb.textContent = '📍 Endereço: '+val+' — agora bipe o produto';
-    fb.style.background='#ebf5fb';
-    var prodInput = document.getElementById('audit-prod');
-    if(prodInput) { prodInput.disabled=false; prodInput.value=''; prodInput.focus(); }
-};
-
-// ── Bip Produto e Validação (com cruzamento inteligente) ──────────────────
-window.auditBipProd = function() {
-    if(_auditBipState === 'end') { auditBipEnd(); return; }
-    var endInput  = document.getElementById('audit-end');
-    var prodInput = document.getElementById('audit-prod');
-    var fbMain    = document.getElementById('audit-fb-main') || document.getElementById('audit-feedback');
-    var fbEndCorr = document.getElementById('audit-fb-endereco-correto');
-    var fbBox     = document.getElementById('audit-feedback');
-    var end  = _auditEndLido;
-    var prod = (prodInput.value||'').trim().toUpperCase();
-
-    if(!end)  { alert('Bipe o endereço primeiro.'); return; }
-    if(!prod) {
-        if(fbMain) fbMain.textContent='⚠️ Bipe o produto!';
-        if(fbEndCorr) fbEndCorr.style.display='none';
-        return;
-    }
-
-    // Ocultar endereço correto por padrão
-    if(fbEndCorr) fbEndCorr.style.display='none';
-
-    var hora  = new Date().toLocaleTimeString('pt-BR');
-    var status, logClass, fbTxt, fbBg, endCorreto='', descProd='';
-
-    // ─── Estratégia de validação ──────────────────────────────────────────
-    // 1. Buscar todos os itens que estão neste endereço segundo o estoque
-    var itensNoEndereco = _auditDB.filter(function(i){
-        return (i.endereco||'').toUpperCase() === end;
-    });
-
-    // 2. Verificar se o produto bipado está NESTE endereço
-    var acertou = itensNoEndereco.find(function(i){
-        return i.produto===prod || i.ean===prod ||
-               (i.produto&&i.produto.includes(prod)) ||
-               (prod.length>=6&&prod.includes(i.produto||''));
-    });
-
-    // 3. Se não acertou, descobrir ONDE esse produto deveria estar
-    if(!acertou) {
-        endCorreto = _auditMapProdEnd[prod] || _auditMapEanEnd[prod] || '';
-        if(!endCorreto && _auditDB.length) {
-            var regProd = _auditDB.find(function(i){
-                return i.produto===prod || i.ean===prod ||
-                       (i.produto&&i.produto.includes(prod)) ||
-                       (prod.length>=6&&i.ean&&i.ean.includes(prod));
-            });
-            if(regProd) { endCorreto = regProd.endereco; descProd = regProd.desc||''; }
-        }
-    }
-
-    // 4. Verificar se o endereço existe no inventário
-    var endExiste = _auditEnderecoDB.length===0 || _auditEnderecoDB.indexOf(end)>=0 || itensNoEndereco.length>0;
-
-    // ─── Determinar status ────────────────────────────────────────────────
-    if(!endExiste && !itensNoEndereco.length) {
-        status='nao-encontrado'; logClass='audit-log-warn'; fbBg='#fff3cd';
-        fbTxt='⚠️ Endereço '+end+' não está no inventário.';
-        window.qtdErros++;
-    } else if(itensNoEndereco.length===0) {
-        status='nao-encontrado'; logClass='audit-log-warn'; fbBg='#fff3cd';
-        fbTxt='⚠️ Endereço '+end+' sem produtos no estoque.';
-        window.qtdErros++;
-    } else if(acertou) {
-        status='acerto'; logClass='audit-log-ok'; fbBg='#d5f5e3';
-        var desc = acertou.desc ? ' — '+acertou.desc.substring(0,30) : '';
-        fbTxt='✅ CORRETO! '+end+desc;
-        window.qtdAcertos++;
-    } else {
-        // DIVERGÊNCIA: produto no endereço errado
-        status='divergencia'; logClass='audit-log-err'; fbBg='#fadbd8';
-        var esperados = itensNoEndereco.slice(0,2).map(function(i){return i.produto||i.ean;}).join(' / ');
-        fbTxt='❌ PRODUTO FORA DO LUGAR! Esperado: '+esperados;
-        if(endCorreto) {
-            fbTxt='❌ PRODUTO NO ENDEREÇO ERRADO!';
-            // Mostrar endereço correto em destaque
-            if(fbEndCorr) {
-                fbEndCorr.style.display='block';
-                fbEndCorr.textContent='📍 ENDEREÇO CORRETO: '+endCorreto+(descProd?' ('+descProd.substring(0,25)+')':'');
-            }
-        }
-        window.qtdErros++;
-    }
-
-    // ─── Atualizar UI ─────────────────────────────────────────────────────
-    if(fbMain)   { fbMain.textContent=fbTxt; }
-    else if(fbBox){ fbBox.textContent=fbTxt; }
-    if(fbBox)    fbBox.style.background=fbBg;
-    document.getElementById('audit-acertos').textContent=window.qtdAcertos;
-    document.getElementById('audit-erros').textContent=window.qtdErros;
-
-    // ─── Beep visual feedback ─────────────────────────────────────────────
-    if(status==='acerto') {
-        fbBox&&fbBox.animate&&fbBox.animate([{transform:'scale(1)'},{transform:'scale(1.04)'},{transform:'scale(1)'}],{duration:200});
-    }
-
-    // ─── Log visual ──────────────────────────────────────────────────────
-    var logEl = document.getElementById('audit-log');
-    if(logEl) {
-        var icons = {'acerto':'✅','divergencia':'❌','nao-encontrado':'⚠️'};
-        var div = document.createElement('div');
-        div.className='audit-log-item '+logClass;
-        var extra = (endCorreto && status==='divergencia') ? '<span style="color:#e74c3c;font-size:9px;font-weight:800;">→'+endCorreto+'</span>' : '';
-        div.innerHTML='<span style="min-width:55px;opacity:.7;font-size:10px;">'+hora+'</span>'
-            +'<span style="font-family:monospace;font-weight:800;font-size:11px;color:#2980b9;">'+end+'</span>'
-            +'<span style="opacity:.5;margin:0 4px;">▸</span>'
-            +'<span style="font-size:11px;">'+prod+'</span>'
-            +'<span style="margin-left:auto;font-size:13px;">'+icons[status]+'</span>'
-            +extra;
-        logEl.insertBefore(div, logEl.firstChild);
-    }
-
-    // ─── Salvar apontamento ───────────────────────────────────────────────
-    if(_auditSessaoAtual) {
-        _auditSessaoAtual.apontamentos.push({
-            endereco: end, produto: prod, status: status, hora: hora,
-            endCorreto: endCorreto||'', desc: descProd||''
-        });
-        if(status==='acerto') _auditSessaoAtual.acertos++;
-        else _auditSessaoAtual.erros++;
-    }
-
-    // Salvar a cada 5 apontamentos
-    if(_auditSessaoAtual && _auditSessaoAtual.apontamentos.length%5===0) {
-        _auditSalvarSessao();
-    }
-
-    // ─── Reset para próximo ───────────────────────────────────────────────
-    _auditBipState='end'; _auditEndLido='';
-    endInput.value=''; prodInput.value=''; prodInput.disabled=true;
-    endInput.focus();
-    auditStepHighlight('end');
-};
-
-// ── Encerrar Sessão ───────────────────────────────────────────
-window.auditEncerrarSessao = function() {
-    if(_auditSessaoAtual) {
-        _auditSessaoAtual.fim = new Date().toISOString();
-        _auditSalvarSessao().then(function(){
-            if(typeof showToast==='function') showToast('✅ Sessão encerrada e guardada!', 'success');
-        });
-    }
-    var panels = ['audit-bip-panel','audit-lista-panel'];
-    panels.forEach(function(id){ var el=document.getElementById(id); if(el) el.style.display='none'; });
-    var loginPanel = document.getElementById('audit-login-panel');
-    if(loginPanel) loginPanel.style.display='';
-    _auditSessaoAtual=null; _auditBipState='end'; _auditEndLido='';
-};
-
-async function _auditSalvarSessao() {
-    if(!_auditSessaoAtual) return;
-    try {
-        var sessoes = await window.getFromDB('auditSessoes') || [];
-        // Actualizar sessão existente ou adicionar nova
-        var idx = sessoes.findIndex(function(s){ return s.inicio === _auditSessaoAtual.inicio && s.operador === _auditSessaoAtual.operador; });
-        if(idx >= 0) sessoes[idx] = _auditSessaoAtual;
-        else sessoes.unshift(_auditSessaoAtual);
-        // Guardar apenas últimas 200 sessões para não encher o IndexedDB
-        if(sessoes.length > 200) sessoes = sessoes.slice(0,200);
-        await window.saveToDB('auditSessoes', sessoes);
-        _auditSessoes = sessoes;
-    } catch(e) { console.warn('_auditSalvarSessao:', e); }
-}
-
-// ── Lista Todos os Endereços ──────────────────────────────────
-window.auditCarregarListaTodos = function() {
-    auditFiltrarLista();
-};
-
-window.auditFiltrarLista = function() {
-    var q = (document.getElementById('audit-busca-end').value||'').toLowerCase();
-    var db = _auditDB.length ? _auditDB : _auditEnderecoDB.map(function(e){return {endereco:e,produto:'',ean:''};});
-    var filtered = q ? db.filter(function(r){
-        return (r.endereco||'').toLowerCase().includes(q) ||
-               (r.produto||'').toLowerCase().includes(q)  ||
-               (r.ean||'').toLowerCase().includes(q);
-    }) : db;
-
-    var el = document.getElementById('audit-lista-todos');
-    if(!el) return;
-    if(!filtered.length) { el.innerHTML='<div style="text-align:center;padding:20px;color:#999;">Nenhum resultado.</div>'; return; }
-    el.innerHTML = filtered.slice(0,200).map(function(r){
-        return '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid #f0f0f0;font-size:12px;">'
-            +'<span style="font-family:monospace;font-weight:800;color:#2980b9;min-width:100px;">'+r.endereco+'</span>'
-            +'<span style="color:#555;flex:1;">'+r.produto+'</span>'
-            +'<span style="color:#888;font-size:10px;">'+r.ean+'</span>'
-            +'</div>';
-    }).join('') + (filtered.length>200?'<div style="text-align:center;padding:8px;font-size:11px;color:#888;">...e mais '+(filtered.length-200)+' itens</div>':'');
-};
-
-// ── Painel Gestor ─────────────────────────────────────────────
-window.auditGestorLoad = function() {
-    Promise.all([
-        window.getFromDB('audit_estoque_guarda').catch(function(){return null;}),
-        window.getFromDB('audit_enderecos_picking').catch(function(){return null;})
-    ]).then(function(results) {
-        if(results[0]&&results[0].data) {
-            _auditDB = results[0].data;
-            // Reconstruir mapas produto/ean → endereço
-            _auditMapProdEnd = {}; _auditMapEanEnd = {};
-            _auditDB.forEach(function(d){
-                if(d.produto) _auditMapProdEnd[d.produto] = d.endereco;
-                if(d.ean)     _auditMapEanEnd[d.ean]      = d.endereco;
-            });
-            var el=document.getElementById('status-estoque-guarda');
-            if(el) el.innerHTML='<span style="color:#27ae60;font-weight:700;">✅ '+_auditDB.length+' itens — '+(results[0].arquivo||'')+'</span>';
-        }
-        if(results[1]&&results[1].data) {
-            _auditEnderecoDB = results[1].data;
-            if(results[1].mapa) _auditMapEndProd = results[1].mapa;
-            var el=document.getElementById('status-enderecos-picking');
-            if(el) el.innerHTML='<span style="color:#8e44ad;font-weight:700;">✅ '+_auditEnderecoDB.length+' endereços — '+(results[1].arquivo||'')+'</span>';
-        }
-        auditGestorRefresh();
-    });
-};
-
-window.auditGestorLogin = function() {
-    var senha = document.getElementById('audit-gestor-senha').value;
-    if(senha==='admin'||senha==='renato2026') {
-        document.getElementById('audit-gestor-login').style.display='none';
-        document.getElementById('audit-gestor-painel').style.display='';
-        auditGestorLoad();
-        auditCarregarApontamentos();
-    } else {
-        alert('Senha incorreta!');
-    }
-};
-
-window.auditGestorRefresh = function() {
-    var nEnd = _auditDB.length || _auditEnderecoDB.length;
-    var el=document.getElementById('gst-total-end'); if(el) el.textContent=nEnd;
-    auditCarregarApontamentos();
-};
-
-window.auditCarregarApontamentos = async function() {
-    try {
-        // Carrega sessões de auditoria do IndexedDB
-        var lista = [];
-        try {
-            var auditData = await window.getFromDB('auditSessoes') || [];
-            lista = Array.isArray(auditData) ? auditData : [];
-        } catch(e) {}
-        _auditSessoes = lista;
-        auditRenderApontamentos(lista);
-    } catch(e) {}
-};
-
-function auditRenderApontamentos(sessoes) {
-    var todos = [];
-    sessoes.forEach(function(s) {
-        (s.apontamentos||[]).forEach(function(a) {
-            todos.push({operador:s.operador, endereco:a.endereco, produto:a.produto, status:a.status, hora:a.hora});
-        });
-    });
-
-    var acertos   = todos.filter(function(a){return a.status==='acerto';}).length;
-    var divs      = todos.filter(function(a){return a.status==='divergencia';}).length;
-    var pct       = todos.length ? ((acertos/todos.length)*100).toFixed(1) : '0';
-    var hoje      = new Date().toISOString().substring(0,10);
-    var sessoesHoje = sessoes.filter(function(s){return s.inicio&&s.inicio.substring(0,10)===hoje;}).length;
-
-    var s=function(id,v){var e=document.getElementById(id);if(e)e.textContent=v;};
-    s('gst-conferidos',acertos); s('gst-divergencias',divs);
-    s('gst-pct-conf',pct+'%'); s('gst-sessoes',sessoesHoje);
-    s('gst-total-end',_auditDB.length||_auditEnderecoDB.length);
-
-    var tbody = document.getElementById('audit-tb-apontamentos');
-    if(!tbody) return;
-    var statusHtml = {
-        'acerto':         '<span style="background:#d5f5e3;color:#27ae60;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:800;">✓ Correto</span>',
-        'divergencia':    '<span style="background:#fadbd8;color:#e74c3c;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:800;">✗ Divergência</span>',
-        'nao-encontrado': '<span style="background:#fff3cd;color:#856404;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:800;">⚠ Não enc.</span>'
-    };
-    tbody.innerHTML = todos.slice(-150).reverse().map(function(a){
-        var endCorretoBadge = (a.endCorreto && a.status==='divergencia')
-            ? '<br><span style="color:#e74c3c;font-size:9px;font-weight:800;font-family:monospace;">📍 Correto: '+a.endCorreto+'</span>'
-            : '';
-        return '<tr>'
-            +'<td style="padding:6px 8px;font-size:11px;">'+a.operador+'</td>'
-            +'<td style="padding:6px 8px;font-family:monospace;font-size:11px;font-weight:700;color:#2980b9;">'+a.endereco+'</td>'
-            +'<td style="padding:6px 8px;font-size:11px;">'+a.produto+endCorretoBadge+'</td>'
-            +'<td style="padding:6px 8px;">'+(statusHtml[a.status]||a.status)+'</td>'
-            +'<td style="padding:6px 8px;font-size:10px;color:#888;">'+a.hora+'</td></tr>';
-    }).join('');
-}
-
-window.auditFiltrarApontamentos = function() {
-    var f = document.getElementById('gst-filtro').value;
-    auditRenderApontamentos(f==='all'?_auditSessoes:_auditSessoes.map(function(s){
-        return Object.assign({},s,{apontamentos:(s.apontamentos||[]).filter(function(a){return a.status===f;})});
-    }));
-};
-
-window.auditLimparHistorico = function() {
-    if(!confirm('Limpar todos os apontamentos?')) return;
-    _auditSessoes=[]; auditRenderApontamentos([]);
-};
-
-window.auditExportarGestor = function() {
-    var todos=[];
-    _auditSessoes.forEach(function(s){
-        (s.apontamentos||[]).forEach(function(a){
-            todos.push([s.operador,a.endereco,a.produto,a.status,a.hora,s.inicio]);
-        });
-    });
-    if(!todos.length){alert('Sem dados para exportar.');return;}
-    var wb=XLSX.utils.book_new();
-    var ws=XLSX.utils.aoa_to_sheet([['Operador','Endereço','Produto','Status','Hora','Sessão']].concat(todos));
-    XLSX.utils.book_append_sheet(wb,ws,'Auditoria');
-    XLSX.writeFile(wb,'Auditoria_'+new Date().toISOString().slice(0,10)+'.xlsx');
-};
-
-
-// ── Link Público do Operador ────────────────────────────────────────────
-window.copiarLinkOperador = function() {
-    var base = window.location.href.split('?')[0];
-    var link = base + '?mode=auditoria';
-    if(navigator.clipboard) {
-        navigator.clipboard.writeText(link).then(function(){
-            if(typeof showToast==='function') showToast('✅ Link copiado! Envie para o operador pelo WhatsApp.', 'success');
-            else alert('Link copiado:\n'+link);
-        });
-    } else {
-        var el = document.createElement('textarea');
-        el.value = link; document.body.appendChild(el); el.select();
-        document.execCommand('copy'); document.body.removeChild(el);
-        if(typeof showToast==='function') showToast('✅ Link copiado!', 'success');
-        else alert('Link copiado:\n'+link);
-    }
-};
-window.auditExportarHistorico = function() { auditExportarGestor(); };
-window.auditFiltrarHistorico  = function() { auditCarregarApontamentos(); };
-
-// ── IA Gestor ─────────────────────────────────────────────────
-window.gerarInsightGestor = function() {
-    var el = document.getElementById('audit-ia-gestor');
-    if(!el) return;
-    el.innerHTML='<i class="fas fa-circle-notch fa-spin"></i> Analisando...';
-    var todos=[];
-    _auditSessoes.forEach(function(s){(s.apontamentos||[]).forEach(function(a){todos.push(a);});});
-    var acertos=todos.filter(function(a){return a.status==='acerto';}).length;
-    var divs=todos.filter(function(a){return a.status==='divergencia';}).length;
-    var pct=todos.length?((acertos/todos.length)*100).toFixed(1):0;
-    var insights=[];
-    if(parseFloat(pct)<80) insights.push('⚠️ Taxa de conformidade baixa ('+pct+'%). Revisar base de dados de endereços.');
-    if(divs>5) insights.push('🔴 '+divs+' divergências encontradas — produtos fora do endereço esperado.');
-    if(!_auditDB.length) insights.push('📋 Estoque Guarda não importado — EANs indisponíveis para conferência.');
-    if(!_auditEnderecoDB.length) insights.push('🗺️ Endereços Picking não importados — localizadores ausentes.');
-    if(!insights.length) insights.push('✅ Operações dentro do padrão. Conferência em dia.');
-    setTimeout(function(){
-        el.innerHTML = insights.map(function(x){return '<div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,.1);">'+x+'</div>';}).join('');
-    }, 800);
-};
-
-// ── IA Panel toggle ───────────────────────────────────────────
-window.toggleIaPanel = function() {
-    var panel = document.getElementById('ia-notif-panel');
-    if(!panel) return;
-    var open = panel.style.display !== 'none';
-    panel.style.display = open ? 'none' : 'block';
-    if(!open) {
-        var body = document.getElementById('ia-notif-body');
-        if(body && (!window._iaInsights||!window._iaInsights.length)) {
-            body.innerHTML = '<div style="padding:16px;text-align:center;color:#888;font-size:12px;">Abra o Dashboard RH e clique em "Atualizar Painel" para gerar insights.</div>';
-        }
-    }
-};
-
-// Auto-generate IA notifications
-window.gerarInsightIA = function() {
-    window.renderDashboardRH && renderDashboardRH();
-};
-
-// ── Load saved audit data on init ─────────────────────────────
-window.addEventListener('load', function() {
-    setTimeout(function() {
-        Promise.all([
-            window.getFromDB&&window.getFromDB('audit_estoque_guarda').catch(function(){return null;}),
-            window.getFromDB&&window.getFromDB('audit_enderecos_picking').catch(function(){return null;})
-        ]).then(function(r) {
-            if(r[0]&&r[0].data) _auditDB = r[0].data;
-            if(r[1]&&r[1].data) _auditEnderecoDB = r[1].data;
-        });
-    }, 3000);
-});
-
 window.updatePublicFormFields = function() { const sel = document.getElementById('pf_colab_select'); if(!sel.value) return; document.getElementById('pf_mat').value = sel.value; document.getElementById('pf_nome').value = sel.options[sel.selectedIndex].text; };
-async function submitPublicForm() { const nome = document.getElementById('pf_nome').value; const mat = document.getElementById('pf_mat').value; const inicio = document.getElementById('pf_inicio').value; const fim = document.getElementById('pf_fim').value; const vendeuRadio = document.querySelector('input[name="pf_vender"]:checked'); const vendeu = vendeuRadio ? vendeuRadio.value : 'nao'; if(!mat||!nome) return alert("Selecione o seu nome!"); if(!inicio||!fim) return alert("Preencha Início e Retorno!"); const payload = { matricula:mat, nome:nome, dataInicio:inicio, dataRetorno:fim, vendeuDias:vendeu==='sim', timestamp:new Date().getTime(), status:'PENDENTE' }; try { const btn = document.querySelector('.pf-btn'); btn.innerText='A ENVIAR...'; btn.disabled=true; const feriasInbox = await window.getFromDB('feriasInbox') || [];
-    payload.id = 'req_'+Date.now();
-    feriasInbox.push(payload);
-    await window.saveToDB('feriasInbox', feriasInbox);
+async function submitPublicForm() { const nome = document.getElementById('pf_nome').value; const mat = document.getElementById('pf_mat').value; const inicio = document.getElementById('pf_inicio').value; const fim = document.getElementById('pf_fim').value; const vendeuRadio = document.querySelector('input[name="pf_vender"]:checked'); const vendeu = vendeuRadio ? vendeuRadio.value : 'nao'; if(!mat||!nome) return alert("Selecione o seu nome!"); if(!inicio||!fim) return alert("Preencha Início e Retorno!"); const payload = { matricula:mat, nome:nome, dataInicio:inicio, dataRetorno:fim, vendeuDias:vendeu==='sim', timestamp:new Date().getTime(), status:'PENDENTE' }; try { const btn = document.querySelector('.pf-btn'); btn.innerText='A ENVIAR...'; btn.disabled=true; await dbCloud.collection('logistica_ferias_inbox').add(payload);
             document.getElementById('pf-form-view').style.display = 'none';
             document.getElementById('pf-success-view').style.display = 'block';
         } catch(e) {
@@ -3138,7 +2123,7 @@ async function submitPublicForm() { const nome = document.getElementById('pf_nom
         if(!inboxBody) return;
         inboxBody.innerHTML = '<div style="padding:20px; text-align:center; color:#999; font-size:12px;">A carregar solicitações...</div>';
         try {
-            const _allFerias = await window.getFromDB('feriasInbox') || []; const snap = { empty: !_allFerias.filter(function(d){return d.status==='PENDENTE';}).length, forEach: function(cb){ _allFerias.filter(function(d){return d.status==='PENDENTE';}).forEach(function(d){ cb({id:d.id, data:function(){return d;}}); }); } };
+            const snap = await dbCloud.collection('logistica_ferias_inbox').where('status', '==', 'PENDENTE').get();
             if(snap.empty) {
                 inboxBody.innerHTML = '<div style="padding:20px; text-align:center; color:#999; font-size:12px;">Nenhuma nova solicitação pendente.</div>';
                 return;
@@ -3166,7 +2151,7 @@ async function submitPublicForm() { const nome = document.getElementById('pf_nom
             rhData[mat].vendeu10Dias = vendeuDias;
             rhData[mat].statusManual = 'AUTO';
             if (window.saveToDB) await window.saveToDB('rhData', rhData);
-            const _fbox=await window.getFromDB('feriasInbox')||[]; const _fi=_fbox.findIndex(function(d){return d.id===docId;}); if(_fi>=0)_fbox[_fi].status='APROVADO'; await window.saveToDB('feriasInbox', _fbox);
+            await dbCloud.collection('logistica_ferias_inbox').doc(docId).update({status: 'APROVADO'});
             renderRHQuad(); renderFerias(); loadInbox();
             alert("Férias aprovadas e lançadas com sucesso no quadro principal!");
         } catch(e) { alert("Erro ao aprovar."); }
@@ -3175,7 +2160,7 @@ async function submitPublicForm() { const nome = document.getElementById('pf_nom
     window.rejeitarFerias = async function(docId) {
         if(!confirm("Tem a certeza que deseja rejeitar esta solicitação? Ela será removida da caixa de entrada.")) return;
         try {
-            const _fbox2=await window.getFromDB('feriasInbox')||[]; const _fj=_fbox2.findIndex(function(d){return d.id===docId;}); if(_fj>=0)_fbox2[_fj].status='REJEITADO'; await window.saveToDB('feriasInbox', _fbox2);
+            await dbCloud.collection('logistica_ferias_inbox').doc(docId).update({status: 'REJEITADO'});
             loadInbox();
         } catch(e) { alert("Erro ao rejeitar."); }
     };
@@ -3699,10 +2684,7 @@ window.confirmarEntregaParcial = async function() {
         try {
             var upd = { dataEntrega: dataEntrega, status: 'parcial' };
             EPI_ITEMS.forEach(function(it){ if (marcados[it.k]) upd[it.k + '_entregue'] = true; });
-            const _regsU = await window.getFromDB('epi_registros') || [];
-    const _iU = _regsU.findIndex(function(r){ return r.id===docId; });
-    if(_iU>=0) Object.assign(_regsU[_iU], upd);
-    await window.saveToDB('epi_registros', _regsU);
+            await dbCloud.collection('logistica_epi_registros').doc(docId).update(upd);
         } catch(e) { alert('Erro ao salvar: ' + e.message); }
     }
 };
