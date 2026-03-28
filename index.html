@@ -1258,8 +1258,7 @@
     </div>
 </div>
 
-<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+<!-- Firebase removido — motor de dados: IndexedDB em logica.js -->
 
 <script src="logica.js"></script>
 
@@ -1755,6 +1754,35 @@ function initPatchV164() {
     }
 
 })(); // fim IIFE patch v164
+    // Auto-init se já estava logado (sessão activa)
+    document.addEventListener('DOMContentLoaded', function() {
+        const p = new URLSearchParams(window.location.search);
+        if (p.get('mode') === 'auditoria') {
+            // Modo operador — ocultar sistema completo
+            document.addEventListener('DOMContentLoaded', function() {
+                document.body.style.background = '#1a1a2e';
+                ['loginOverlay'].forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
+                document.querySelectorAll('.app-header,.memory-bar,.tab-bar').forEach(el => el.style.display='none');
+                document.querySelectorAll('.sys-wrapper').forEach(el => el.classList.remove('active'));
+                const wa = document.getElementById('wrapper-auditoria'); if(wa) wa.classList.add('active');
+                if(window.getFromDB) {
+                    Promise.all([window.getFromDB('audit_estoque_guarda'),window.getFromDB('audit_enderecos_picking')])
+                    .then(function(r){
+                        if(r[0]&&r[0].data) window._auditDB=r[0].data;
+                        if(r[1]&&r[1].data) window._auditEnderecoDB=r[1].data;
+                    });
+                }
+            });
+            return;
+        }
+        if (sessionStorage.getItem('logado') === 'sim') {
+            const lo = document.getElementById('loginOverlay');
+            if (lo) lo.style.display = 'none';
+            if(typeof renderMetas === 'function') renderMetas();
+            if(typeof init === 'function') setTimeout(init, 100);
+        }
+    });
+
 </script>
 
 
