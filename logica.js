@@ -2,44 +2,18 @@
 // NÚCLEO DO SISTEMA v163.0 — CLOUD, RH INTELIGENTE E LOGÍSTICA (CORRIGIDO)
 // =========================================================================
 
-function parseNum(val) {
-    if (val === null || val === undefined || val === '') return 0;
-    if (typeof val === 'number') return val;
-    let str = String(val).trim();
-    if (str.includes(',') && str.includes('.')) { str = str.replace(/\./g, '').replace(',', '.'); }
-    else if (str.includes(',')) { str = str.replace(',', '.'); }
-    str = str.replace(/[^\d\.-]/g, '');
-    let n = parseFloat(str);
-    return isNaN(n) ? 0 : n;
-}
-
-function fmtInt(n) { return Math.round(n || 0).toString(); }
-function fmtBig(n) { return (n || 0).toLocaleString('pt-BR'); }
-function safeUpdate(id, val) { try { const el = document.getElementById(id); if (el) { if (el.tagName === 'INPUT') el.value = val; else el.innerText = val; } } catch (e) {} }
-function getVal(id) { try { const el = document.getElementById(id); if (!el) return 0; return parseInt(el.innerText) || 0; } catch (e) { return 0; } }
-function sanitize(str) { if (!str) return ""; return String(str).replace(/[\.\-\/\s]/g, "").toUpperCase(); }
-function formatDateBR(isoDateStr) { if(!isoDateStr) return '-'; const parts = String(isoDateStr).split('-'); if(parts.length===3) return `${parts[2]}/${parts[1]}/${parts[0]}`; return isoDateStr; }
-function formatDecimalToTime(decimalHours) {
-    if (!decimalHours || decimalHours === 0) return "00:00";
-    let sign = decimalHours < 0 ? '-' : '+';
-    let absH = Math.abs(decimalHours);
-    let h = Math.floor(absH);
-    let m = Math.round((absH - h) * 60);
-    if (m === 60) { h += 1; m = 0; }
-    return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-}
-
 let chP = null, chF = null, cenGauge = null, cenRadar = null;
-let dC = [], dE = [], dPickRes = [], dRH = [];
+let dC = [], dE = [], dPickRes = [];
 let globalHistory = [], globalErrors = [];
-let rhData = {}, colMapMaster = { ped: null, ate: null, n_ate: null, prod: null, desc: null, mov: null, cx_ped: null, cx_ate: null, rom: null, dep: null };
+// rhData managed by rh.js
+let colMapMaster = { ped: null, ate: null, n_ate: null, prod: null, desc: null, mov: null, cx_ped: null, cx_ate: null, rom: null, dep: null };
 let forceBoxCalc = false;
 let moduleStats = {}, projData = [];
 let globalAttentionPoints = [], globalSurplusList = [], globalDeficitList = [];
 let cachedCenarioData = null;
 let isDecisionCommitted = false;
 let stationTopProducts = {}, macroTopProducts = {}, macroTopBoxes = {};
-let pendenciasRH = []; 
+// pendenciasRH managed by rh.js
 
 Chart.register(ChartDataLabels);
 
@@ -59,99 +33,6 @@ let SECTORS = {
 const DEFAULT_METAS = { 'm_MEDICAMENTO': 450, 'm_PERFUMARIA': 450, 'm_CONTROLADO': 50, 'm_DERMO': 300, 'm_VOLUMOSO': 300, 'm_ALIMENTO': 250, 'm_LATA': 150, 'm_VM': 300, 'm_VH': 150, 'm_RUAS': 250 };
 const META_LABELS = { 'm_MEDICAMENTO': 'Med', 'm_PERFUMARIA': 'Perf', 'm_CONTROLADO': 'Contr', 'm_DERMO': 'Dermo', 'm_VOLUMOSO': 'Vol', 'm_ALIMENTO': 'Alim', 'm_LATA': 'Lata', 'm_VM': 'VM', 'm_VH': 'VH', 'm_RUAS': 'Ruas' };
 
-// ═══════════════════════════════════════════════════════════════
-// MOTOR DE DADOS — IndexedDB (sem limite, file:// e Netlify OK)
-// Firebase removido — não causa mais resource-exhausted
-// ═══════════════════════════════════════════════════════════════
-const IDB_NAME  = 'SistemaLogistico';
-const IDB_STORE = 'dados';
-let   _idb      = null;
-
-// Stub dbCloud para manter compatibilidade com código que ainda o referencia
-const dbCloud = {
-    collection: function(col) {
-        const self = this;
-        return {
-            add:    async function(d) { const k='_col_'+col+'_'+Date.now(); d._id=k; const all=await window.getFromDB('_col_'+col)||[]; all.push(d); await window.saveToDB('_col_'+col,all); return {id:k}; },
-            doc:    function(id)  { return {
-                set:    async function(d){ await window.saveToDB(col+'__'+id, d); },
-                update: async function(d){ const old=await window.getFromDB(col+'__'+id)||{}; await window.saveToDB(col+'__'+id, {...old,...d}); },
-                get:    async function(){ const v=await window.getFromDB(col+'__'+id); return {exists:!!v, data:function(){return v||{};}, id:id}; },
-                delete: async function(){ await window.saveToDB(col+'__'+id, null); }
-            };},
-            where:  function(){ return { get: async function(){ const all=await window.getFromDB('_col_'+col)||[]; return {empty:!all.length, size:all.length, forEach:function(cb){all.forEach(d=>cb({id:d._id||'', data:function(){return d;}}));}}; } }; },
-            get:    async function(){ const all=await window.getFromDB('_col_'+col)||[]; return {empty:!all.length, size:all.length, forEach:function(cb){all.forEach(d=>cb({id:d._id||'', data:function(){return d;}}));}}; }
-        };
-    }
-};
-
-window.openDB = function() {
-    return new Promise(function(resolve) {
-        if (_idb) { resolve(_idb); return; }
-        const req = indexedDB.open(IDB_NAME, 1);
-        req.onupgradeneeded = function(e) {
-            if (!e.target.result.objectStoreNames.contains(IDB_STORE))
-                e.target.result.createObjectStore(IDB_STORE, {keyPath:'k'});
-        };
-        req.onsuccess = function(e) { _idb = e.target.result; resolve(_idb); };
-        req.onerror   = function()  { resolve(null); };
-    });
-};
-
-window.saveToDB = async function(k, v) {
-    if (v === null || v === undefined) return;
-    const db = await window.openDB();
-    const str = JSON.stringify(v);
-    if (db) {
-        return new Promise(function(resolve) {
-            try {
-                const tx = db.transaction(IDB_STORE, 'readwrite');
-                tx.objectStore(IDB_STORE).put({k:k, v:str});
-                tx.oncomplete = resolve;
-                tx.onerror    = function() { _lsSave(k, str); resolve(); };
-            } catch(e) { _lsSave(k, str); resolve(); }
-        });
-    }
-    _lsSave(k, str);
-};
-
-function _lsSave(k, str) {
-    const SZ=300000, mk='sysLog3_'+k+'__m';
-    try {
-        const old=JSON.parse(localStorage.getItem(mk)||'null');
-        if(old&&old.n) for(let i=0;i<old.n;i++) localStorage.removeItem('sysLog3_'+k+'__'+i);
-        if(str.length<=SZ){ localStorage.setItem('sysLog3_'+k,str); localStorage.removeItem(mk); }
-        else {
-            const n=Math.ceil(str.length/SZ);
-            localStorage.setItem(mk,JSON.stringify({n})); localStorage.removeItem('sysLog3_'+k);
-            for(let i=0;i<n;i++) { try{ localStorage.setItem('sysLog3_'+k+'__'+i,str.slice(i*SZ,(i+1)*SZ)); }catch(e){break;} }
-        }
-    } catch(e) { console.warn('_lsSave quota:',k); }
-}
-
-window.getFromDB = async function(k) {
-    const db = await window.openDB();
-    if (db) {
-        const r = await new Promise(function(resolve) {
-            try {
-                const tx=db.transaction(IDB_STORE,'readonly'), req=tx.objectStore(IDB_STORE).get(k);
-                req.onsuccess=function(e){resolve(e.target.result?JSON.parse(e.target.result.v):null);};
-                req.onerror=function(){resolve(null);};
-            } catch(e){resolve(null);}
-        });
-        if (r !== null) return r;
-    }
-    // Fallback localStorage — todas as versões de chave
-    try {
-        const mk='sysLog3_'+k+'__m', meta=localStorage.getItem(mk);
-        if(meta){const{n}=JSON.parse(meta);let f='';for(let i=0;i<n;i++)f+=localStorage.getItem('sysLog3_'+k+'__'+i)||'';return f?JSON.parse(f):null;}
-        const s=localStorage.getItem('sysLog3_'+k); if(s)return JSON.parse(s);
-        const l1=localStorage.getItem('sysLogV2_'+k); if(l1)return JSON.parse(l1);
-        const l2=localStorage.getItem('sysLog_'+k)||localStorage.getItem(k); if(l2)return JSON.parse(l2);
-        if(k==='dRH'){const lr=localStorage.getItem('rh_colaboradores');if(lr)return JSON.parse(lr);}
-    } catch(e) {}
-    return null;
-};
 
 function setSysModule(mod) {
     document.querySelectorAll('.main-mod-btn').forEach(btn => btn.classList.remove('active'));
@@ -209,61 +90,35 @@ function renderMetas() {
     } catch(e) { console.warn('renderMetas erro:', e); }
 }
 
-let _initDone = false;
 async function init() {
-    if (_initDone) return;
-    _initDone = true;
     try {
-        // 1. Inicializar IndexedDB
-        await window.openDB();
-
-        // 2. Limpar lixo de versões antigas (evita QuotaExceeded)
-        try { Object.keys(localStorage).filter(k=>k.startsWith('sysLogV2_')).forEach(k=>localStorage.removeItem(k)); } catch(e) {}
-
-        // 3. Carregar RH com fallback em todas as chaves legadas
-        let savedRH = await window.getFromDB('dRH');
-        if (!savedRH || !savedRH.length) {
-            for (const k of ['rh_colaboradores','dRH','sysLog_dRH','sysLog3_dRH']) {
-                try { const v=localStorage.getItem(k); if(v){const p=JSON.parse(v);if(p&&p.length){savedRH=p;break;}} } catch(e){}
+        if (window.openDB) await window.openDB();
+        if (window.getFromDB) {
+            const savedRH = await window.getFromDB('dRH');
+            if (savedRH && savedRH.length > 0) { 
+                dRH = savedRH; rhData = (await window.getFromDB('rhData')) || {}; 
+                const savedPendencias = await window.getFromDB('pendenciasRH');
+                if(savedPendencias) pendenciasRH = savedPendencias;
+                renderRHQuad(); renderFerias(); renderBanco(); renderAbs(); renderPontoMensal(); 
             }
+            const hist = await window.getFromDB('dHistory');
+            if (hist) { globalHistory = hist; renderHistoryList(); }
+            await restoreSession(); 
         }
-        if (savedRH && savedRH.length > 0) {
-            dRH = savedRH;
-            let savedRhData = await window.getFromDB('rhData');
-            if (!savedRhData || !Object.keys(savedRhData).length) {
-                for (const k of ['rhData','sysLog_rhData','sysLog3_rhData']) {
-                    try { const v=localStorage.getItem(k); if(v){const p=JSON.parse(v);if(p&&Object.keys(p).length){savedRhData=p;break;}} } catch(e){}
-                }
-            }
-            rhData = savedRhData || {};
-            // Persistir no IndexedDB
-            await window.saveToDB('dRH', dRH);
-            await window.saveToDB('rhData', rhData);
-            try { localStorage.setItem('rh_colaboradores', JSON.stringify(dRH)); } catch(e) {}
-            const sp = await window.getFromDB('pendenciasRH');
-            if(sp) pendenciasRH = sp;
-            renderRHQuad(); renderFerias(); renderBanco(); renderAbs(); renderPontoMensal();
-            if(typeof window.renderTabelaEPI === 'function') window.renderTabelaEPI();
-            if(typeof window.renderEpiTab    === 'function') window.renderEpiTab();
-        }
-
-        // 4. Histórico
-        const hist = await window.getFromDB('dHistory');
-        if (hist) { globalHistory = hist; renderHistoryList(); }
-
-        // 5. Sessão operação
-        await restoreSession();
-
-        // 6. Metas, setores, relógio
+        // METAS — renderiza SEMPRE independente de erros anteriores
         renderMetas();
-        try { const ss=JSON.parse(localStorage.getItem('sysLog_sectors')); if(ss) SECTORS=ss; } catch(e) {}
+        const ss = JSON.parse(localStorage.getItem('sysLog_sectors'));
+        if (ss) SECTORS = ss;
         aplicarCoresOficiais(0);
         setInterval(updateClock, 1000);
-        setInterval(async () => { try { await autoSaveData(); } catch(e) { console.warn('autoSave falhou:', e); } }, 30000);
+        // AUTO-SAVE automático a cada 30 segundos
+        setInterval(async () => { 
+            try { await autoSaveData(); } catch(e) { console.warn('autoSave falhou:', e); }
+        }, 30000);
         const today = new Date();
         const pickSelect = document.getElementById('pick-month-select');
-        if(pickSelect) pickSelect.value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
-    } catch(e) { console.error("Erro init:", e); }
+        if(pickSelect) pickSelect.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    } catch (e) { console.error("Erro init:", e); }
 }
 
 async function restoreSession() {
@@ -300,17 +155,10 @@ async function restoreSession() {
 
 async function autoSaveData() {
     if (!window.saveToDB) return;
-    const indicator = document.getElementById('saveIndicator');
     try {
+        // Indicador visual de salvamento
+        const indicator = document.getElementById('saveIndicator');
         if (indicator) { indicator.textContent = '💾 Salvando...'; indicator.style.color = '#f39c12'; }
-
-        // ── RH — salvar SEMPRE (dados críticos) ──────────────────
-        if (dRH && dRH.length) {
-            await window.saveToDB('dRH', dRH);
-            try { localStorage.setItem('rh_colaboradores', JSON.stringify(dRH)); } catch(e) {}
-        }
-        if (rhData && Object.keys(rhData).length) await window.saveToDB('rhData', rhData);
-
         if (dC.length) {
             // Salvar dC slim — só campos usados pelo runCalc (evita timeout por volume)
             const dCSlim = dC.map(r => {
@@ -354,29 +202,17 @@ async function saveSession() {
     const loadScreen = document.getElementById('loading'); const loadMsg = document.getElementById('loadMsg'); loadScreen.style.display = 'flex';
     try {
         if (!window.saveToDB) throw new Error("Banco não inicializado.");
-        loadMsg.innerText = "Salvando dados localmente...";
+        loadMsg.innerText = "Sincronizando com Google Cloud...";
         await autoSaveData();
         if (dRH && dRH.length) await window.saveToDB('dRH', dRH);
         if (Object.keys(rhData).length) await window.saveToDB('rhData', rhData);
         await window.saveToDB('dHistory', globalHistory); await window.saveToDB('forceBoxCalc', forceBoxCalc);
         localStorage.setItem('sysLog_metas', JSON.stringify(getCurrentMetas())); localStorage.setItem('sysLog_sectors', JSON.stringify(SECTORS));
-        alert("✅ Todos os dados salvos com sucesso!");
-    } catch (error) { alert("⚠️ Erro ao salvar. Motivo: " + error.message); } finally { loadScreen.style.display = 'none'; loadMsg.innerText = "Processando..."; }
+        alert("Sincronização com Google Cloud finalizada com sucesso!");
+    } catch (error) { alert("Atenção: Sincronização parou! Motivo: " + error.message); } finally { loadScreen.style.display = 'none'; loadMsg.innerText = "Processando..."; }
 }
 
-async function clearSession() {
-    if (confirm("Limpar apenas a operação DIÁRIA? (Dados de RH são mantidos)")) {
-        try {
-            await window.saveToDB('dC', []);
-            await window.saveToDB('dE', []);
-            await window.saveToDB('dPickRes', []);
-            // Preservar chaves de RH
-            const keysToRemove = Object.keys(localStorage).filter(k => k.startsWith('sysLog') && !k.includes('rh_colabo'));
-            keysToRemove.forEach(k => localStorage.removeItem(k));
-        } catch(e) {}
-        location.reload();
-    }
-}
+async function clearSession() { if (confirm("Limpar a operação DIÁRIA?")) { if (window.saveToDB) { await window.saveToDB('dC', []); await window.saveToDB('dE', []); } localStorage.clear(); location.reload(); } }
 
 function getCurrentMetas() { const m = {}; for (let k in DEFAULT_METAS) { const el = document.getElementById(k); m[k] = (el && el.value) ? parseInt(el.value) : DEFAULT_METAS[k]; if (isNaN(m[k])) m[k] = DEFAULT_METAS[k]; } return m; }
 
@@ -614,127 +450,6 @@ document.getElementById('f_rh').addEventListener('change', function () {
     r.readAsArrayBuffer(this.files[0]);
 });
 
-window.renderRHQuad = function() {
-    const tb = document.querySelector('#tbRH'); if (!tb) return;
-    tb.innerHTML = ''; if (dRH.length === 0) { tb.innerHTML = '<tr><td colspan="5">Nenhum colaborador registado.</td></tr>'; return; }
-
-    // Contadores — todos os não-inativos são contados por função
-    let ativos = 0, lideres = 0, ops = 0, sups = 0;
-
-    dRH.forEach((r, index) => {
-        const mat  = r['Matrícula'] || r['Matricula'] || r['MATRICULA'] || '-';
-        const nome = r['Nome'] || r['NOME'] || '-';
-        if (nome === '-' && mat === '-') return;
-        const func = (r['Função'] || r['Funcao'] || r['FUNÇÃO'] || '-').toUpperCase();
-
-        let baseStatus = (r['Status'] || r['STATUS'] || 'ATIVO').toUpperCase();
-        ensureRhData(mat);
-        let rh = rhData[mat];
-        let statusFinal = (rh.statusManual && rh.statusManual !== 'AUTO') ? rh.statusManual.toUpperCase() : baseStatus;
-
-        // Detecta férias automaticamente pelo período cadastrado
-        if (statusFinal === 'ATIVO' && rh.feriasInicio && rh.feriasFim) {
-            const today = new Date(); today.setHours(0,0,0,0);
-            const fIn  = new Date(rh.feriasInicio + 'T00:00:00');
-            const fFim = new Date(rh.feriasFim    + 'T00:00:00');
-            if (today >= fIn && today <= fFim) statusFinal = 'FÉRIAS';
-        }
-
-        // INATIVO: não conta em nenhum KPI, não aparece na tabela
-        if (statusFinal === 'INATIVO') return;
-
-        // KPIs — todos os não-inativos contam (ATIVO, FÉRIAS, AFASTADO, etc.)
-        ativos++;   // "Total Ativos" = total de não-inativos no quadro
-
-        // Classificação por função
-        if (func.includes('SUPERVISOR') || func.includes('SUPERVISORA')) sups++;
-        else if (func.includes('LIDER') || func.includes('LÍDER'))       lideres++;
-        else if (func.includes('OPERADOR'))                               ops++;
-
-        // Badge de status
-        let statusBadge;
-        if      (statusFinal === 'ATIVO')                statusBadge = `<span style="background:#e8f5e9; color:#2e7d32; padding:4px 10px; border-radius:12px; font-weight:900; font-size:10px;">ATIVO</span>`;
-        else if (statusFinal === 'FÉRIAS')               statusBadge = `<span style="background:#fff3cd; color:#856404; padding:4px 10px; border-radius:12px; font-weight:900; font-size:10px;"><i class="fas fa-umbrella-beach"></i> EM FÉRIAS</span>`;
-        else if (statusFinal === 'AFASTADO')             statusBadge = `<span style="background:#fdf5e6; color:#e67e22; padding:4px 10px; border-radius:12px; font-weight:900; font-size:10px;">AFASTADO</span>`;
-        else if (statusFinal === 'TRANSFERENCIA DE SETOR' || statusFinal === 'TRANSFERENCIA DE TURNO')
-                                                         statusBadge = `<span style="background:#e0f7fa; color:#00838f; padding:4px 10px; border-radius:12px; font-weight:900; font-size:10px;"><i class="fas fa-exchange-alt"></i> TRANSFERIDO</span>`;
-        else                                             statusBadge = `<span style="background:#ffebeb; color:#c0392b; padding:4px 10px; border-radius:12px; font-weight:900; font-size:10px;">${statusFinal}</span>`;
-
-        let acoes = `<button class="btn btn-blue" style="padding:4px 8px; font-size:11px;" onclick="abrirEdicaoRH(${index})"><i class="fas fa-edit"></i> Modificar</button>`;
-        tb.innerHTML += `<tr><td style="font-weight:bold;">${mat}</td><td style="text-align:left;">${nome}</td><td style="text-align:left;">${r['Função']||r['Funcao']||r['FUNÇÃO']||'-'}</td><td>${statusBadge}</td><td>${acoes}</td></tr>`;
-    });
-
-    document.getElementById('rh-kpis').style.display = 'grid';
-    safeUpdate('rh-tot', ativos);
-    safeUpdate('rh-lid', lideres);
-    safeUpdate('rh-op',  ops);
-    safeUpdate('rh-sup', sups);   // ← supervisor agora é atualizado
-};
-
-window.abrirModalRH = function() { document.getElementById('rhEditIndex').value = -1; document.getElementById('rhMat').value = ''; document.getElementById('rhNome').value = ''; document.getElementById('rhFunc').value = 'OPERADOR'; document.getElementById('rhAdm').value = ''; document.getElementById('rhStatus').value = 'AUTO'; document.getElementById('modalRHTitle').innerHTML = '<i class="fas fa-user-plus"></i> Novo Colaborador'; document.getElementById('modalRH').style.display = 'flex'; };
-window.abrirEdicaoRH = function(index) {
-    const c = dRH[index]; const mat = c['Matrícula'] || c['Matricula'] || c['MATRICULA'] || '';
-    document.getElementById('rhEditIndex').value = index; document.getElementById('rhMat').value = mat; document.getElementById('rhNome').value = c['Nome'] || c['NOME'] || ''; document.getElementById('rhFunc').value = c['Função'] || c['Funcao'] || c['FUNÇÃO'] || '';
-    let admRaw = c['Admissão'] || c['Admissao'] || ''; let admDate = '';
-    if(admRaw && admRaw.includes('/')) { const parts = admRaw.split('/'); if(parts.length === 3) admDate = `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`; }
-    document.getElementById('rhAdm').value = admDate; ensureRhData(mat); document.getElementById('rhStatus').value = rhData[mat].statusManual || 'AUTO';
-    document.getElementById('modalRHTitle').innerHTML = '<i class="fas fa-user-edit"></i> Editar Colaborador'; document.getElementById('modalRH').style.display = 'flex';
-};
-window.fecharModalRH = function() { document.getElementById('modalRH').style.display = 'none'; };
-window.salvarColaboradorRH = async function() {
-    const idx = parseInt(document.getElementById('rhEditIndex').value); const mat = document.getElementById('rhMat').value.trim(); const nome = document.getElementById('rhNome').value.trim().toUpperCase(); const func = document.getElementById('rhFunc').value.trim().toUpperCase(); const adm = document.getElementById('rhAdm').value; const status = document.getElementById('rhStatus').value;
-    if(!mat || !nome) return alert("A Matrícula e o Nome são obrigatórios!");
-    let admFormatada = adm; if(adm) { const d = new Date(adm + "T12:00:00"); admFormatada = d.toLocaleDateString('pt-BR'); }
-    if(idx === -1) { dRH.push({ 'Matrícula': mat, 'Nome': nome, 'Função': func, 'Admissão': admFormatada, 'Status': 'ATIVO' }); } else { dRH[idx]['Matrícula'] = mat; dRH[idx]['Nome'] = nome; dRH[idx]['Função'] = func; dRH[idx]['Admissão'] = admFormatada; }
-    ensureRhData(mat); rhData[mat].statusManual = status;
-    if (window.saveToDB) { await window.saveToDB('dRH', dRH); await window.saveToDB('rhData', rhData); }
-    fecharModalRH(); renderRHQuad(); renderFerias(); renderBanco(); renderAbs(); renderPontoMensal();
-};
-
-document.getElementById('f_ferias')?.addEventListener('change', function () {
-    if (typeof XLSX === 'undefined' || !this.files[0]) return;
-    document.getElementById('loading').style.display = 'flex'; document.getElementById('loadMsg').innerText = "A extrair dados...";
-    const r = new FileReader();
-    r.onload = async e => {
-        try {
-            const wb = XLSX.read(e.target.result, { type: 'array' }); const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-            let rawTextRows = raw.map(r => (r || []).map(cell => String(cell).trim()).join(' ').replace(/\s+/g, ' ').toUpperCase());
-            let blocks = {}, currentMat = null; const regexMat = /\b(\d{6,8})\b/;
-            for(let i=0; i < rawTextRows.length; i++) { let txt = rawTextRows[i].trim(); if(txt === "") continue; let match = txt.match(regexMat); if (match) { currentMat = match[1]; blocks[currentMat] = txt; } else if (currentMat) { blocks[currentMat] += " " + txt; } }
-            let count = 0;
-            dRH.forEach(emp => {
-                const matRh = String(emp['Matrícula'] || emp['Matricula'] || '').trim(); const numMatRh = parseInt(matRh, 10); if (!matRh || isNaN(numMatRh)) return;
-                let blockText = null; for (let key in blocks) { if (parseInt(key, 10) === numMatRh) { blockText = blocks[key]; break; } }
-                if (blockText) {
-                    ensureRhData(matRh); let updated = false; let regexDatas = /\b(\d{2})[\/\-](\d{2})[\/\-](\d{4})\b/g; let todasDatas = []; let m;
-                    while ((m = regexDatas.exec(blockText)) !== null) { todasDatas.push(`${m[1]}/${m[2]}/${m[3]}`); }
-                    if (todasDatas.length > 0) {
-                        let lastDateStr = todasDatas[todasDatas.length - 1]; rhData[matRh].limiteFerias = lastDateStr.split('/').reverse().join('-'); updated = true;
-                        let periodoEncontrado = false, idxAquisitivoIni = -1, idxAquisitivoFim = -1;
-                        for(let i=0; i<todasDatas.length; i++) { for(let j=i+1; j<todasDatas.length; j++) {
-                            let p1 = todasDatas[i].split('/'), p2 = todasDatas[j].split('/'); let d1 = new Date(p1[2], p1[1]-1, p1[0]), d2 = new Date(p2[2], p2[1]-1, p2[0]);
-                            let diffDays = Math.abs((d2 - d1) / (1000 * 60 * 60 * 24));
-                            if (diffDays >= 364 && diffDays <= 366) { let dataIn = d1 < d2 ? todasDatas[i] : todasDatas[j]; let dataFim = d1 < d2 ? todasDatas[j] : todasDatas[i]; rhData[matRh].periodoAberto = `${dataIn} a ${dataFim}`; periodoEncontrado = true; idxAquisitivoIni = i; idxAquisitivoFim = j; break; }
-                        } if (periodoEncontrado) break; }
-                        let marcacoes = [];
-                        for(let i=0; i<todasDatas.length - 1; i++) {
-                            if (i === idxAquisitivoIni || i === idxAquisitivoFim || (i+1) === idxAquisitivoIni || (i+1) === idxAquisitivoFim || i === todasDatas.length - 1 || (i+1) === todasDatas.length - 1) continue;
-                            let p1 = todasDatas[i].split('/'), p2 = todasDatas[i+1].split('/'); let d1 = new Date(p1[2], p1[1]-1, p1[0]), d2 = new Date(p2[2], p2[1]-1, p2[0]);
-                            let diffDays = Math.abs((d2 - d1) / (1000 * 60 * 60 * 24));
-                            if (diffDays >= 4 && diffDays <= 30) { let dataIn = d1 < d2 ? todasDatas[i] : todasDatas[i+1]; let dataFim = d1 < d2 ? todasDatas[i+1] : todasDatas[i]; marcacoes.push({ ini: dataIn, fim: dataFim, dtInObj: new Date(dataIn.split('/').reverse().join('-')) }); i++; }
-                        }
-                        if (marcacoes.length > 0) { marcacoes.sort((a,b) => b.dtInObj - a.dtInObj); rhData[matRh].feriasInicio = marcacoes[0].ini.split('/').reverse().join('-'); rhData[matRh].feriasFim = marcacoes[0].fim.split('/').reverse().join('-'); rhData[matRh].statusManual = 'AUTO'; }
-                    }
-                    if (updated) count++;
-                }
-            });
-            if (window.saveToDB) await window.saveToDB('rhData', rhData);
-            renderFerias(); renderRHQuad();
-            if (count === 0) alert("⚠️ Nenhuma correspondência encontrada."); else alert(`✅ Leitura Concluída! ${count} atualizados.`);
-        } catch (err) { alert("Erro: " + err.message); }
-        document.getElementById('loading').style.display = 'none'; this.value = '';
-    }; r.readAsArrayBuffer(this.files[0]);
-});
 
 function renderFerias() {
     const tb = document.getElementById('tbFerias'); if (!tb || !dRH.length) return; tb.innerHTML = '';
@@ -767,41 +482,6 @@ function renderFerias() {
     });
 }
 
-async function updateRHData(mat, field, val, inputEl) {
-    ensureRhData(mat); rhData[mat][field] = val;
-    if (window.saveToDB) await window.saveToDB('rhData', rhData);
-    if (inputEl && inputEl.type !== 'checkbox') { inputEl.style.backgroundColor = '#d4edda'; setTimeout(() => { inputEl.style.backgroundColor = ''; }, 1000); }
-}
-
-function renderBanco() {
-    const tb = document.getElementById('tbBanco'); if (!tb || !dRH.length) return; tb.innerHTML = ''; let totalHoras = 0;
-    dRH.forEach(r => {
-        const mat = r['Matrícula'] || r['Matricula'] || r['MATRICULA'] || '-'; const nome = r['Nome'] || r['NOME'] || '-';
-        const status = (r['Status'] || r['STATUS'] || '-').toUpperCase(); if (nome === '-' || status !== 'ATIVO') return;
-        ensureRhData(mat); const h = rhData[mat].banco || 0; totalHoras += h; let color = h > 0 ? 'var(--green)' : (h < 0 ? 'var(--red)' : '#555');
-        tb.innerHTML += `<tr><td style="font-weight:bold;">${mat}</td><td style="text-align:left;">${nome}</td><td><strong style="color:${color}; font-size:16px;">${formatDecimalToTime(h)}</strong></td></tr>`;
-    }); safeUpdate('bh-global', formatDecimalToTime(totalHoras));
-}
-
-document.getElementById('f_banco').addEventListener('change', function () {
-    if (typeof XLSX === 'undefined' || !this.files[0]) return;
-    document.getElementById('loading').style.display = 'flex'; const r = new FileReader();
-    r.onload = async e => {
-        try {
-            const wb = XLSX.read(e.target.result, { type: 'array' }); const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { raw: false });
-            raw.forEach(row => {
-                let mat = row['Matrícula'] || row['Matricula'] || row['MATRICULA']; let nome = row['Nome'] || row['NOME'] || row['NOME COMPLETO']; let saldoStr = row['Total Banco'] || row['TOTAL BANCO'] || row['Saldo'] || row['SALDO'] || row['Horas'] || row['Banco'];
-                if (!mat && nome) { const emp = dRH.find(e => String(e['Nome'] || e['NOME']).toUpperCase().trim() === String(nome).toUpperCase().trim()); if (emp) mat = emp['Matrícula'] || emp['Matricula']; }
-                if (mat && saldoStr !== undefined) {
-                    ensureRhData(mat); let valStr = String(saldoStr).trim(); let num = 0;
-                    if (valStr.includes(':')) { let sign = 1; if (valStr.startsWith('-')) { sign = -1; valStr = valStr.substring(1); } else if (valStr.startsWith('+')) { valStr = valStr.substring(1); } let parts = valStr.split(':'); num = sign * ((parseInt(parts[0]) || 0) + ((parseInt(parts[1]) || 0) / 60)); } else { num = parseFloat(valStr.replace(',', '.').replace(/[^0-9.-]/g, '')) || 0; }
-                    rhData[mat].banco = parseFloat(num.toFixed(2));
-                }
-            });
-            if (window.saveToDB) await window.saveToDB('rhData', rhData); renderBanco(); alert("Banco de Horas importado!");
-        } catch (err) { alert("Erro: " + err); } document.getElementById('loading').style.display = 'none'; this.value = '';
-    }; r.readAsArrayBuffer(this.files[0]);
-});
 
 function renderAbs() {
     const sel = document.getElementById('selAbsEmp'); const tb = document.getElementById('tbAbs'); if (!sel || !tb || !dRH.length) return;
@@ -1750,25 +1430,22 @@ var _epiCache={docs:null,ts:0,TTL:90000};
 var EPI_ITEMS=[{k:'blusa',lbl:'Blusa',ico:'fas fa-tshirt'},{k:'calca',lbl:'Calca',ico:'fas fa-male'},{k:'bermuda',lbl:'Bermuda',ico:'fas fa-cut'},{k:'casaco',lbl:'Casaco',ico:'fas fa-mitten'},{k:'bota',lbl:'Bota',ico:'fas fa-shoe-prints'},{k:'luva',lbl:'Luva',ico:'fas fa-hand-paper'},{k:'cinta',lbl:'Cinta',ico:'fas fa-life-ring'}];
 async function loadEpiColabs(){const sel=document.getElementById('epi_sel');if(!sel)return;try{const rh=await window.getFromDB('dRH');if(rh&&rh.length>0){const at=rh.filter(r=>(r['Status']||r['STATUS']||'ATIVO').toUpperCase()!=='INATIVO');at.sort((a,b)=>(a['Nome']||a['NOME']||'').localeCompare(b['Nome']||b['NOME']||''));sel.innerHTML='<option value="">-- Selecione o seu nome --</option>';at.forEach(r=>{const mat=r['Matrícula']||r['Matricula']||r['MATRICULA']||'';const nome=r['Nome']||r['NOME']||'';if(nome)sel.innerHTML+=`<option value="${mat}">${nome}</option>`;});return;}}catch(e){}sel.innerHTML='<option value="">Sem lista.</option>';}
 window.epiTog=function(item,size){const grp=document.getElementById('epi_grp_'+item);if(!grp)return;const same=_epiPubSel[item]===size;grp.querySelectorAll('.epi-sz-btn').forEach(b=>b.classList.remove('selected'));_epiPubSel[item]=same?'':size;if(!same)grp.querySelectorAll('.epi-sz-btn').forEach(b=>{if(b.textContent.trim()===size)b.classList.add('selected');});};
-window.submitEpiPublicForm=async function(){const sel=document.getElementById('epi_sel');const vm=document.getElementById('epi-vmsg');const err=t=>{if(vm){vm.style.display='block';vm.textContent=t;}};if(!sel||!sel.value){err('Selecione o seu nome!');return;}if(!Object.values(_epiPubSel).some(v=>v!=='')){err('Selecione pelo menos um tamanho!');return;}if(vm)vm.style.display='none';const btn=document.getElementById('epi-sub-btn');if(btn){btn.disabled=true;btn.innerText='A ENVIAR...';}const nome=sel.options[sel.selectedIndex].text;const p={nomeCompleto:nome,nome,matricula:sel.value,blusa:_epiPubSel.blusa,calca:_epiPubSel.calca,bermuda:_epiPubSel.bermuda,casaco:_epiPubSel.casaco,bota:_epiPubSel.bota,luva:_epiPubSel.luva,cinta:_epiPubSel.cinta,timestamp:new Date().getTime(),status:'PENDENTE'};try{const _ei=await window.getFromDB('epi_inbox')||[];p.id='epi_'+Date.now();_ei.push(p);await window.saveToDB('epi_inbox',_ei);}catch(e){console.warn('EPI submit:',e);}document.getElementById('epi-pub-form').style.display='none';document.getElementById('epi-ok-view').style.display='block';};
+window.submitEpiPublicForm=async function(){const sel=document.getElementById('epi_sel');const vm=document.getElementById('epi-vmsg');const err=t=>{if(vm){vm.style.display='block';vm.textContent=t;}};if(!sel||!sel.value){err('Selecione o seu nome!');return;}if(!Object.values(_epiPubSel).some(v=>v!=='')){err('Selecione pelo menos um tamanho!');return;}if(vm)vm.style.display='none';const btn=document.getElementById('epi-sub-btn');if(btn){btn.disabled=true;btn.innerText='A ENVIAR...';}const nome=sel.options[sel.selectedIndex].text;const p={nomeCompleto:nome,nome,matricula:sel.value,blusa:_epiPubSel.blusa,calca:_epiPubSel.calca,bermuda:_epiPubSel.bermuda,casaco:_epiPubSel.casaco,bota:_epiPubSel.bota,luva:_epiPubSel.luva,cinta:_epiPubSel.cinta,timestamp:new Date().getTime(),status:'PENDENTE'};try{await dbCloud.collection('logistica_epi_inbox').add(p);}catch(e){}document.getElementById('epi-pub-form').style.display='none';document.getElementById('epi-ok-view').style.display='block';};
 window.copyEpiFormLink=function(){const nl=String.fromCharCode(10);const link=window.location.href.split('?')[0]+'?mode=formepi';const msg='Solicitacao de Uniforme & EPI'+nl+nl+'Acesse o link, selecione seu nome e tamanhos:'+nl+nl+link+nl+nl+'Obrigado!';if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(msg).then(()=>alert('Link copiado!')).catch(()=>window.open('https://api.whatsapp.com/send?text='+encodeURIComponent(msg),'_blank'));else window.open('https://api.whatsapp.com/send?text='+encodeURIComponent(msg),'_blank');};
 window.renderEpiTab=async function(forceRefresh){if(_epiTabBusy)return;_epiTabBusy=true;try{await Promise.all([loadEpiInbox(forceRefresh),renderEpiTable(forceRefresh)]);}finally{setTimeout(()=>{_epiTabBusy=false;},1500);}};
-window.loadEpiInbox=async function(forceRefresh){const body=document.getElementById('epiInboxBody');if(!body)return;body.innerHTML='<div style="padding:12px;text-align:center;color:#999;font-size:12px;"><i class="fas fa-circle-notch fa-spin"></i> Carregando...</div>';_epiInboxMap={};let items=[];try{const _eia=await window.getFromDB('epi_inbox')||[];items=_eia.filter(d=>d.status==='PENDENTE').map(d=>({id:d.id,data:d}));items.sort((a,b)=>(b.data.timestamp||0)-(a.data.timestamp||0));}catch(e){}if(!items.length){body.innerHTML='<div style="padding:16px;text-align:center;color:#999;font-size:12px;">Nenhuma solicitacao pendente.</div>';return;}let h='';items.forEach((item,i)=>{_epiInboxMap[i]=item;const d=item.data;const tags=EPI_ITEMS.filter(it=>d[it.k]).map(it=>`<span class="epi-sz-tag"><i class="${it.ico}"></i> ${it.lbl}: ${d[it.k]}</span>`).join('');h+=`<div class="epi-inbox-item"><div class="epi-inbox-name">${d.nomeCompleto||d.nome||'?'} <span style="font-size:10px;color:#999;font-weight:400;">(${d.matricula})</span></div><div class="epi-inbox-sizes">${tags}</div><div style="display:flex;gap:8px;margin-top:8px;"><button class="btn btn-green" style="padding:5px 12px;font-size:12px;" onclick="abrirModalAprovar(${i})"><i class="fas fa-check-square"></i> Aprovar Itens</button><button class="btn btn-red" style="padding:5px 12px;font-size:12px;" onclick="rejeitarEpi(${i})"><i class="fas fa-times"></i> Rejeitar</button></div></div>`;});body.innerHTML=h;};
+window.loadEpiInbox=async function(forceRefresh){const body=document.getElementById('epiInboxBody');if(!body)return;body.innerHTML='<div style="padding:12px;text-align:center;color:#999;font-size:12px;"><i class="fas fa-circle-notch fa-spin"></i> Carregando...</div>';_epiInboxMap={};let items=[];try{const snap=await dbCloud.collection('logistica_epi_inbox').where('status','==','PENDENTE').get();snap.forEach(d=>items.push({id:d.id,data:d.data()}));items.sort((a,b)=>(b.data.timestamp||0)-(a.data.timestamp||0));}catch(e){}if(!items.length){body.innerHTML='<div style="padding:16px;text-align:center;color:#999;font-size:12px;">Nenhuma solicitacao pendente.</div>';return;}let h='';items.forEach((item,i)=>{_epiInboxMap[i]=item;const d=item.data;const tags=EPI_ITEMS.filter(it=>d[it.k]).map(it=>`<span class="epi-sz-tag"><i class="${it.ico}"></i> ${it.lbl}: ${d[it.k]}</span>`).join('');h+=`<div class="epi-inbox-item"><div class="epi-inbox-name">${d.nomeCompleto||d.nome||'?'} <span style="font-size:10px;color:#999;font-weight:400;">(${d.matricula})</span></div><div class="epi-inbox-sizes">${tags}</div><div style="display:flex;gap:8px;margin-top:8px;"><button class="btn btn-green" style="padding:5px 12px;font-size:12px;" onclick="abrirModalAprovar(${i})"><i class="fas fa-check-square"></i> Aprovar Itens</button><button class="btn btn-red" style="padding:5px 12px;font-size:12px;" onclick="rejeitarEpi(${i})"><i class="fas fa-times"></i> Rejeitar</button></div></div>`;});body.innerHTML=h;};
 window.abrirModalAprovar=function(i){const item=_epiInboxMap[i];if(!item)return;_epiAprovandoIdx=i;const d=item.data;const nEl=document.getElementById('modalAprovarEpiNome');if(nEl)nEl.innerHTML=`<i class="fas fa-user"></i> ${d.nomeCompleto||d.nome||'?'} <span style="color:#888;font-weight:400;font-size:12px;">(${d.matricula})</span>`;const iEl=document.getElementById('modalAprovarEpiItens');if(iEl){const req=EPI_ITEMS.filter(it=>d[it.k]);iEl.innerHTML=req.map(it=>`<label class="epi-item-chk"><input type="checkbox" id="chk_${it.k}" checked onchange="this.closest('label').style.opacity=this.checked?'1':'0.5'"><i class="${it.ico}" style="color:#8e44ad;font-size:15px;"></i><span style="font-weight:800;min-width:60px;">${it.lbl}:</span><span style="background:#8e44ad;color:white;border-radius:5px;padding:2px 9px;font-size:12px;">${d[it.k]}</span><span style="margin-left:auto;font-size:11px;color:#27ae60;font-weight:700;">Sera fornecido</span></label>`).join('');}const btn=document.getElementById('btnConfirmarAprEpi');if(btn){btn.disabled=false;btn.innerHTML='<i class="fas fa-check"></i> Confirmar Aprovacao';}document.getElementById('modalAprovarEpi').style.display='flex';};
-window.confirmarAprovacaoEpi=async function(){const item=_epiInboxMap[_epiAprovandoIdx];if(!item)return;const btn=document.getElementById('btnConfirmarAprEpi');if(btn){btn.disabled=true;btn.innerHTML='<i class="fas fa-circle-notch fa-spin"></i> Salvando...';}const d=item.data;const forn={};EPI_ITEMS.forEach(it=>{const chk=document.getElementById('chk_'+it.k);forn[it.k]=(chk&&chk.checked&&d[it.k])?d[it.k]:'-';});if(!Object.values(forn).some(v=>v!=='-')){alert('Selecione pelo menos um item!');if(btn){btn.disabled=false;btn.innerHTML='<i class="fas fa-check"></i> Confirmar Aprovacao';}return;}const nr={id:'tmp_'+Date.now(),mat:d.matricula,nome:d.nomeCompleto||d.nome||'',blusa:forn.blusa,calca:forn.calca,bermuda:forn.bermuda,casaco:forn.casaco,bota:forn.bota,luva:forn.luva,cinta:forn.cinta,dataAprov:new Date().toLocaleDateString('pt-BR'),dataAprovTs:Date.now(),status:'aprovado',dataEntrega:''};if(_epiCache.docs)_epiCache.docs.unshift(nr);document.getElementById('modalAprovarEpi').style.display='none';renderEpiTableFromCache();try{const _reg={...nr,id:'reg_'+Date.now()};
-    const _regsA=await window.getFromDB('epi_registros')||[]; _regsA.push(_reg); await window.saveToDB('epi_registros',_regsA);
-    const _eiaUp=await window.getFromDB('epi_inbox')||[];const _eiIdx=_eiaUp.findIndex(d=>d.id===item.id);if(_eiIdx>=0)_eiaUp[_eiIdx].status='APROVADO';await window.saveToDB('epi_inbox',_eiaUp);
-    if(_epiCache.docs){const idx=_epiCache.docs.findIndex(r=>r.id===nr.id);if(idx>=0)_epiCache.docs[idx].id=_reg.id;}}catch(e){console.warn('EPI:',e);if(_epiCache.docs)_epiCache.docs=_epiCache.docs.filter(r=>r.id!==nr.id);renderEpiTableFromCache();alert('Erro: '+e.message);return;}loadEpiInbox(true);};
-window.rejeitarEpi=async function(i){const item=_epiInboxMap[i];if(!item||!confirm('Rejeitar?'))return;try{const _eir=await window.getFromDB('epi_inbox')||[];const _eirI=_eir.findIndex(d=>d.id===item.id);if(_eirI>=0)_eir[_eirI].status='REJEITADO';await window.saveToDB('epi_inbox',_eir);}catch(e){}loadEpiInbox(true);};
-window.confirmarEntregaEpi=async function(docId){if(!confirm('Confirmar entrega fisica?'))return;const de=new Date().toLocaleDateString('pt-BR');if(_epiCache.docs){const r=_epiCache.docs.find(r=>r.id===docId);if(r){r.status='entregue';r.dataEntrega=de;}}renderEpiTableFromCache();try{const _eent=await window.getFromDB('epi_registros')||[];const _iE=_eent.findIndex(r=>r.id===docId);if(_iE>=0){_eent[_iE].status='entregue';_eent[_iE].dataEntrega=de;}await window.saveToDB('epi_registros',_eent);}catch(e){alert('Erro:'+e.message);_epiCache.docs=null;renderEpiTable(true);}};
-window.renderEpiTable=async function(forceRefresh){if(!forceRefresh&&_epiCache.docs&&(Date.now()-_epiCache.ts)<_epiCache.TTL){renderEpiTableFromCache();return;}const tb=document.getElementById('tbEpi');if(!tb)return;tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:12px;color:#999;"><i class="fas fa-circle-notch fa-spin"></i> Carregando...</td></tr>';try{const _er=await window.getFromDB('epi_registros')||[];_er.sort((a,b)=>(b.dataAprovTs||0)-(a.dataAprovTs||0));_epiCache.docs=_er;_epiCache.ts=Date.now();}catch(e){if(!_epiCache.docs){tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:20px;color:#e74c3c;">Erro ao carregar.</td></tr>';return;}}renderEpiTableFromCache();};
+window.confirmarAprovacaoEpi=async function(){const item=_epiInboxMap[_epiAprovandoIdx];if(!item)return;const btn=document.getElementById('btnConfirmarAprEpi');if(btn){btn.disabled=true;btn.innerHTML='<i class="fas fa-circle-notch fa-spin"></i> Salvando...';}const d=item.data;const forn={};EPI_ITEMS.forEach(it=>{const chk=document.getElementById('chk_'+it.k);forn[it.k]=(chk&&chk.checked&&d[it.k])?d[it.k]:'-';});if(!Object.values(forn).some(v=>v!=='-')){alert('Selecione pelo menos um item!');if(btn){btn.disabled=false;btn.innerHTML='<i class="fas fa-check"></i> Confirmar Aprovacao';}return;}const nr={id:'tmp_'+Date.now(),mat:d.matricula,nome:d.nomeCompleto||d.nome||'',blusa:forn.blusa,calca:forn.calca,bermuda:forn.bermuda,casaco:forn.casaco,bota:forn.bota,luva:forn.luva,cinta:forn.cinta,dataAprov:new Date().toLocaleDateString('pt-BR'),dataAprovTs:Date.now(),status:'aprovado',dataEntrega:''};if(_epiCache.docs)_epiCache.docs.unshift(nr);document.getElementById('modalAprovarEpi').style.display='none';renderEpiTableFromCache();try{const[snapReg]=await Promise.all([dbCloud.collection('logistica_epi_registros').add({inboxId:item.id,mat:nr.mat,nome:nr.nome,blusa:nr.blusa,calca:nr.calca,bermuda:nr.bermuda,casaco:nr.casaco,bota:nr.bota,luva:nr.luva,cinta:nr.cinta,dataAprov:nr.dataAprov,dataAprovTs:nr.dataAprovTs,status:'aprovado',dataEntrega:''}),dbCloud.collection('logistica_epi_inbox').doc(item.id).update({status:'APROVADO'})]);if(_epiCache.docs){const idx=_epiCache.docs.findIndex(r=>r.id===nr.id);if(idx>=0)_epiCache.docs[idx].id=snapReg.id;}}catch(e){console.warn('EPI:',e);if(_epiCache.docs)_epiCache.docs=_epiCache.docs.filter(r=>r.id!==nr.id);renderEpiTableFromCache();alert('Erro: '+e.message);return;}loadEpiInbox(true);};
+window.rejeitarEpi=async function(i){const item=_epiInboxMap[i];if(!item||!confirm('Rejeitar?'))return;try{await dbCloud.collection('logistica_epi_inbox').doc(item.id).update({status:'REJEITADO'});}catch(e){}loadEpiInbox(true);};
+window.confirmarEntregaEpi=async function(docId){if(!confirm('Confirmar entrega fisica?'))return;const de=new Date().toLocaleDateString('pt-BR');if(_epiCache.docs){const r=_epiCache.docs.find(r=>r.id===docId);if(r){r.status='entregue';r.dataEntrega=de;}}renderEpiTableFromCache();try{await dbCloud.collection('logistica_epi_registros').doc(docId).update({status:'entregue',dataEntrega:de});}catch(e){alert('Erro:'+e.message);_epiCache.docs=null;renderEpiTable(true);}};
+window.renderEpiTable=async function(forceRefresh){if(!forceRefresh&&_epiCache.docs&&(Date.now()-_epiCache.ts)<_epiCache.TTL){renderEpiTableFromCache();return;}const tb=document.getElementById('tbEpi');if(!tb)return;tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:12px;color:#999;"><i class="fas fa-circle-notch fa-spin"></i> Carregando...</td></tr>';try{const snap=await dbCloud.collection('logistica_epi_registros').get();const docs=[];snap.forEach(d=>docs.push({id:d.id,...d.data()}));docs.sort((a,b)=>(b.dataAprovTs||0)-(a.dataAprovTs||0));_epiCache.docs=docs;_epiCache.ts=Date.now();}catch(e){if(!_epiCache.docs){tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:20px;color:#e74c3c;">Erro ao carregar.</td></tr>';return;}}renderEpiTableFromCache();};
 window.renderEpiTableFromCache=function(){const tb=document.getElementById('tbEpi');if(!tb)return;const docs=_epiCache.docs||[];const fSel=document.getElementById('epiFilterStatus');const f=fSel?fSel.value:'all';const filtered=f==='all'?docs:docs.filter(r=>r.status===f);const cnt=document.getElementById('epiRegCount');if(cnt)cnt.textContent=docs.length;const ecnt=document.getElementById('epiEntregCount');if(ecnt)ecnt.textContent=docs.filter(r=>r.status==='entregue').length+' entregues';if(!filtered.length){tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:20px;color:#999;">Nenhum registro.</td></tr>';return;}const sz=v=>(!v||v==='-')?'<span style="color:#ccc;">-</span>':`<span style="background:#e8daef;color:#6c3483;padding:2px 7px;border-radius:4px;font-weight:700;font-size:10px;">${v}</span>`;tb.innerHTML=filtered.map(x=>{const ok=x.status==='entregue';const isParcial=x.status==='parcial';const badge=ok?`<span class="epi-badge-entg"><i class="fas fa-check-double"></i> Entregue ${x.dataEntrega||''}</span>`:isParcial?`<span style="background:#d6eaf8;color:#1a5276;padding:3px 9px;border-radius:10px;font-size:10px;font-weight:800;white-space:nowrap;"><i class="fas fa-box-open"></i> Parcial ${x.dataEntrega||''}</span>`:`<span class="epi-badge-pend"><i class="fas fa-box"></i> Aguard. Entrega</span>`;const act=ok?`<button onclick="excluirEpiReg('${x.id}')" style="background:#e74c3c;color:white;border:none;border-radius:4px;padding:3px 8px;font-size:10px;font-weight:700;cursor:pointer;"><i class="fas fa-trash"></i></button>`:`<button onclick="abrirModalEntregaEpi('${x.id}')" style="background:#27ae60;color:white;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;"><i class="fas fa-box-open"></i> Entregar</button> <button onclick="excluirEpiReg('${x.id}')" style="background:#e74c3c;color:white;border:none;border-radius:4px;padding:5px 8px;font-size:10px;font-weight:700;cursor:pointer;margin-left:4px;"><i class="fas fa-trash"></i></button>`;return `<tr class="${ok?'epi-reg-row-entg':''}"><td style="text-align:left;font-weight:700;white-space:nowrap;">${x.nome}</td><td style="text-align:left;color:#777;font-size:10px;">${x.mat}</td><td>${sz(x.blusa)}</td><td>${sz(x.calca)}</td><td>${sz(x.bermuda)}</td><td>${sz(x.casaco)}</td><td>${sz(x.bota)}</td><td>${sz(x.luva)}</td><td>${sz(x.cinta)}</td><td style="color:#777;font-size:10px;white-space:nowrap;">${x.dataAprov||''}</td><td>${badge}</td><td style="white-space:nowrap;">${act}</td></tr>`;}).join('');};
-window.excluirEpiReg=async function(docId){if(!confirm('Excluir permanentemente?'))return;if(_epiCache.docs)_epiCache.docs=_epiCache.docs.filter(r=>r.id!==docId);renderEpiTableFromCache();try{const _edl=(await window.getFromDB('epi_registros')||[]).filter(r=>r.id!==docId);await window.saveToDB('epi_registros',_edl);}catch(e){alert('Erro:'+e.message);_epiCache.docs=null;renderEpiTable(true);}};
+window.excluirEpiReg=async function(docId){if(!confirm('Excluir permanentemente?'))return;if(_epiCache.docs)_epiCache.docs=_epiCache.docs.filter(r=>r.id!==docId);renderEpiTableFromCache();try{await dbCloud.collection('logistica_epi_registros').doc(docId).delete();}catch(e){alert('Erro:'+e.message);_epiCache.docs=null;renderEpiTable(true);}};
 window.filterEpiTable=function(){const q=(document.getElementById('epiSearchInput').value||'').toLowerCase();document.querySelectorAll('#tbEpi tr').forEach(r=>{r.style.display=q===''||r.textContent.toLowerCase().includes(q)?'':'none';});};
-window.exportEpiExcel=async function(){try{let docs=_epiCache.docs;if(!docs){docs=await window.getFromDB('epi_registros')||[];docs.sort((a,b)=>(b.dataAprovTs||0)-(a.dataAprovTs||0));}if(!docs.length){alert('Sem registros.');return;}const rows=[['Colaborador','Matricula','Blusa','Calca','Bermuda','Casaco','Bota','Luva','Cinta','Data Aprovacao','Status','Data Entrega']];docs.forEach(x=>rows.push([x.nome,x.mat,x.blusa,x.calca,x.bermuda,x.casaco,x.bota,x.luva,x.cinta,x.dataAprov||'',x.status==='entregue'?'Entregue':'Aguardando',x.dataEntrega||'']));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Uniforme_EPI');XLSX.writeFile(wb,'Uniforme_EPI_'+new Date().toISOString().slice(0,10)+'.xlsx');}catch(e){alert('Erro:'+e.message);}};
+window.exportEpiExcel=async function(){try{let docs=_epiCache.docs;if(!docs){const snap=await dbCloud.collection('logistica_epi_registros').get();docs=[];snap.forEach(d=>docs.push(d.data()));docs.sort((a,b)=>(b.dataAprovTs||0)-(a.dataAprovTs||0));}if(!docs.length){alert('Sem registros.');return;}const rows=[['Colaborador','Matricula','Blusa','Calca','Bermuda','Casaco','Bota','Luva','Cinta','Data Aprovacao','Status','Data Entrega']];docs.forEach(x=>rows.push([x.nome,x.mat,x.blusa,x.calca,x.bermuda,x.casaco,x.bota,x.luva,x.cinta,x.dataAprov||'',x.status==='entregue'?'Entregue':'Aguardando',x.dataEntrega||'']));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Uniforme_EPI');XLSX.writeFile(wb,'Uniforme_EPI_'+new Date().toISOString().slice(0,10)+'.xlsx');}catch(e){alert('Erro:'+e.message);}};
 
 // Dashboard RH
-window.renderDashboardRH=async function(){const btn=document.querySelector('[onclick*="renderDashboardRH"]');if(btn){btn.disabled=true;btn.innerHTML='<i class="fas fa-circle-notch fa-spin"></i> Actualizando...';}try{const ano=new Date().getFullYear();setDRH('drh-ano-label',ano);const[dRHfb,rhDataFb,pendInbox,epiRegs]=await Promise.all([window.getFromDB('dRH').catch(()=>null),window.getFromDB('rhData').catch(()=>null),window.getFromDB('feriasInbox').then(v=>(v||[]).filter(d=>d.status==='PENDENTE')).catch(()=>[]),window.getFromDB('epi_registros').catch(()=>null)]);const lista=(dRHfb&&dRHfb.length)?dRHfb:(window.dRH||[]);const rh=rhDataFb||window.rhData||{};const hoje=new Date();hoje.setHours(0,0,0,0);let ativos=0,inativos=0,entradasAno=0,supCount=0,liderCount=0,opCount=0;lista.forEach(c=>{const mat=c['Matrícula']||c['Matricula']||c['MATRICULA']||'';const func=(c['Função']||c['Funcao']||c['FUNÇÃO']||'').toUpperCase();const s=(c['Status']||c['STATUS']||'ATIVO').toUpperCase();const rhM=rh[mat]||{};const sf=(rhM.statusManual&&rhM.statusManual!=='AUTO')?rhM.statusManual.toUpperCase():s;if(sf==='INATIVO'){inativos++;return;}ativos++;if(func.includes('SUPERVISOR'))supCount++;else if(func.includes('LIDER')||func.includes('LÍDER'))liderCount++;else opCount++;const admRaw=c['Admissão']||c['Admissao']||c['ADMISSÃO']||'';let admY=0;if(admRaw.includes('/'))admY=parseInt(admRaw.split('/')[2]||0);else if(admRaw.includes('-'))admY=parseInt(admRaw.split('-')[0]||0);if(admY===ano)entradasAno++;});const turnover=inativos>0?((inativos/Math.max(1,ativos+inativos))*100).toFixed(1):'0.0';const pendRep=(typeof pendenciasRH!=='undefined')?pendenciasRH.length:0;setDRH('drh-entradas',entradasAno);setDRH('drh-saidas',inativos);setDRH('drh-turnover',turnover+'%');setDRH('drh-ativos',ativos);setDRH('drh-reposicoes',pendRep);let insC='📊 <strong>'+ativos+' ativos</strong> | '+supCount+' sup | '+liderCount+' líd | '+opCount+' op. ';insC+=parseFloat(turnover)>15?'🚨 Turnover elevado ('+turnover+'%).':parseFloat(turnover)>8?'⚡ Moderado ('+turnover+'%).':'✅ Controlado ('+turnover+'%).';if(pendRep>0)insC+=' 🔴 <strong>'+pendRep+' vaga(s) em reposição.</strong>';setDRH('ai-colab-insight',insC,true);let fAtivas=0,fVencidas=0,em30=0;lista.forEach(c=>{const mat=c['Matrícula']||c['Matricula']||c['MATRICULA']||'';const r=rh[mat]||{};if(r.feriasInicio&&r.feriasFim){const fi=new Date(r.feriasInicio+'T00:00:00'),ff=new Date(r.feriasFim+'T00:00:00');if(hoje>=fi&&hoje<=ff)fAtivas++;}if(r.limiteFerias){const lim=new Date(r.limiteFerias+'T00:00:00'),d=(lim-hoje)/86400000;if(d<0&&!r.feriasInicio)fVencidas++;else if(d>=0&&d<=30&&!r.feriasInicio)em30++;}});const pendFer=Array.isArray(pendInbox)?pendInbox.length:0;setDRH('drh-ferias-ativas',fAtivas);setDRH('drh-ferias-vencidas',fVencidas);setDRH('drh-ferias-a-vencer',em30);setDRH('drh-ferias-pendentes',pendFer);let insFer='';if(fVencidas>0)insFer+='🚨 <strong>'+fVencidas+' vencidas</strong> — risco legal. ';if(em30>0)insFer+='⏰ '+em30+' a vencer em 30 dias. ';if(fAtivas>0)insFer+='🌴 '+fAtivas+' em gozo. ';if(pendFer>0)insFer+='📬 '+pendFer+' pendente(s). ';if(!insFer)insFer='✅ Sem irregularidades.';setDRH('ai-ferias-insight',insFer,true);let totPos=0,totNeg=0,qtdPos=0,qtdNeg=0;Object.keys(rh).forEach(mat=>{const bh=typeof rh[mat].banco==='number'?rh[mat].banco:0;if(bh>0){totPos+=bh;qtdPos++;}else if(bh<0){totNeg+=Math.abs(bh);qtdNeg++;}});const fmtBH=h=>{const a=Math.abs(h);return(h<0?'-':'+')+String(Math.floor(a)).padStart(2,'0')+':'+String(Math.round((a-Math.floor(a))*60)).padStart(2,'0');};setDRH('drh-bh-positivo',fmtBH(totPos));setDRH('drh-bh-negativo',fmtBH(-totNeg));setDRH('drh-bh-qtd-pos',qtdPos);setDRH('drh-bh-qtd-neg',qtdNeg);setDRH('ai-bh-insight',(totPos>100?'⚠️ Saldo positivo elevado. ':qtdNeg>ativos*0.2?'🔴 +20% com saldo negativo. ':'')+'✅ OK',true);let totalAbs=0,diasAbs=0,motCount={},pesCount={},absMeses={};lista.forEach(c=>{const mat=c['Matrícula']||c['Matricula']||c['MATRICULA']||'';const nome=c['Nome']||c['NOME']||mat;((rh[mat]||{}).faltas||[]).forEach(f=>{totalAbs++;const dias=parseInt(f.dias)||1;diasAbs+=dias;motCount[f.motivo||'Outro']=(motCount[f.motivo||'Outro']||0)+dias;pesCount[nome]=(pesCount[nome]||0)+dias;const mk=(f.data||'').substring(0,7)||'N/A';absMeses[mk]=(absMeses[mk]||0)+dias;});});const topMot=Object.keys(motCount).sort((a,b)=>motCount[b]-motCount[a])[0]||'—';const topPes=Object.keys(pesCount).sort((a,b)=>pesCount[b]-pesCount[a])[0]||'—';setDRH('drh-abs-total',totalAbs);setDRH('drh-abs-dias',diasAbs);setDRH('drh-abs-motivo',topMot.length>22?topMot.slice(0,20)+'...':topMot);setDRH('drh-abs-pessoa',topPes.length>22?topPes.slice(0,20)+'...':topPes);renderChartAbsMotivo(motCount);renderChartAbsMensal2(absMeses);const taxa=ativos>0?((diasAbs/(ativos*22))*100).toFixed(1):0;setDRH('ai-abs-insight','📊 Taxa: <strong>'+taxa+'%</strong>. '+(parseFloat(taxa)>4?'🚨 Acima do limite. Motivo: <strong>'+topMot+'</strong>.':parseFloat(taxa)>2?'⚠️ Moderada.':'✅ Ok.'),true);let pTotal=0,pFaltas=0,pMarcacoes=0,pOk=0,pontoTipos={};Object.keys(rh).forEach(mat=>{((rh[mat]||{}).ponto||[]).forEach(p=>{pTotal++;const tp=(p.tipo||'').toLowerCase(),ac=(p.acao||'').toLowerCase();if(tp.includes('falta sem'))pFaltas++;if(tp.includes('marcação')||tp.includes('marcacao'))pMarcacoes++;if(ac.includes('justificado')||ac.includes('arquivado'))pOk++;pontoTipos[p.tipo||'Outro']=(pontoTipos[p.tipo||'Outro']||0)+1;});});setDRH('drh-ponto-total',pTotal);setDRH('drh-ponto-faltas',pFaltas);setDRH('drh-ponto-marcacoes',pMarcacoes);setDRH('drh-ponto-ok',pOk);renderChartPontoTipo(pontoTipos);setDRH('ai-ponto-insight',pTotal>0?'🗓 <strong>'+pTotal+' ocorrência(s)</strong>.'+(pFaltas>5?' ⚠️ Faltas: '+pFaltas+'.':''):'Nenhuma ocorrência.',true);let epiTotal=0,epiEntg=0;if(epiRegs&&Array.isArray(epiRegs))epiRegs.forEach(d=>{epiTotal++;if(d.status==='entregue')epiEntg++;});setDRH('drh-epi-total',epiTotal);setDRH('drh-epi-entregues',epiEntg);setDRH('drh-epi-pendentes',epiTotal-epiEntg);}catch(e){console.error('Dashboard RH:',e);}finally{if(btn){btn.disabled=false;btn.innerHTML='<i class="fas fa-sync-alt"></i> Atualizar Painel';}}};
+window.renderDashboardRH=async function(){const btn=document.querySelector('[onclick*="renderDashboardRH"]');if(btn){btn.disabled=true;btn.innerHTML='<i class="fas fa-circle-notch fa-spin"></i> Actualizando...';}try{const ano=new Date().getFullYear();setDRH('drh-ano-label',ano);const[dRHfb,rhDataFb,pendInbox,epiRegs]=await Promise.all([window.getFromDB('dRH').catch(()=>null),window.getFromDB('rhData').catch(()=>null),dbCloud.collection('logistica_ferias_inbox').where('status','==','PENDENTE').get().catch(()=>null),dbCloud.collection('logistica_epi_registros').get().catch(()=>null)]);const lista=(dRHfb&&dRHfb.length)?dRHfb:(window.dRH||[]);const rh=rhDataFb||window.rhData||{};const hoje=new Date();hoje.setHours(0,0,0,0);let ativos=0,inativos=0,entradasAno=0,supCount=0,liderCount=0,opCount=0;lista.forEach(c=>{const mat=c['Matrícula']||c['Matricula']||c['MATRICULA']||'';const func=(c['Função']||c['Funcao']||c['FUNÇÃO']||'').toUpperCase();const s=(c['Status']||c['STATUS']||'ATIVO').toUpperCase();const rhM=rh[mat]||{};const sf=(rhM.statusManual&&rhM.statusManual!=='AUTO')?rhM.statusManual.toUpperCase():s;if(sf==='INATIVO'){inativos++;return;}ativos++;if(func.includes('SUPERVISOR'))supCount++;else if(func.includes('LIDER')||func.includes('LÍDER'))liderCount++;else opCount++;const admRaw=c['Admissão']||c['Admissao']||c['ADMISSÃO']||'';let admY=0;if(admRaw.includes('/'))admY=parseInt(admRaw.split('/')[2]||0);else if(admRaw.includes('-'))admY=parseInt(admRaw.split('-')[0]||0);if(admY===ano)entradasAno++;});const turnover=inativos>0?((inativos/Math.max(1,ativos+inativos))*100).toFixed(1):'0.0';const pendRep=(typeof pendenciasRH!=='undefined')?pendenciasRH.length:0;setDRH('drh-entradas',entradasAno);setDRH('drh-saidas',inativos);setDRH('drh-turnover',turnover+'%');setDRH('drh-ativos',ativos);setDRH('drh-reposicoes',pendRep);let insC='📊 <strong>'+ativos+' ativos</strong> | '+supCount+' sup | '+liderCount+' líd | '+opCount+' op. ';insC+=parseFloat(turnover)>15?'🚨 Turnover elevado ('+turnover+'%).':parseFloat(turnover)>8?'⚡ Moderado ('+turnover+'%).':'✅ Controlado ('+turnover+'%).';if(pendRep>0)insC+=' 🔴 <strong>'+pendRep+' vaga(s) em reposição.</strong>';setDRH('ai-colab-insight',insC,true);let fAtivas=0,fVencidas=0,em30=0;lista.forEach(c=>{const mat=c['Matrícula']||c['Matricula']||c['MATRICULA']||'';const r=rh[mat]||{};if(r.feriasInicio&&r.feriasFim){const fi=new Date(r.feriasInicio+'T00:00:00'),ff=new Date(r.feriasFim+'T00:00:00');if(hoje>=fi&&hoje<=ff)fAtivas++;}if(r.limiteFerias){const lim=new Date(r.limiteFerias+'T00:00:00'),d=(lim-hoje)/86400000;if(d<0&&!r.feriasInicio)fVencidas++;else if(d>=0&&d<=30&&!r.feriasInicio)em30++;}});const pendFer=pendInbox?pendInbox.size:0;setDRH('drh-ferias-ativas',fAtivas);setDRH('drh-ferias-vencidas',fVencidas);setDRH('drh-ferias-a-vencer',em30);setDRH('drh-ferias-pendentes',pendFer);let insFer='';if(fVencidas>0)insFer+='🚨 <strong>'+fVencidas+' vencidas</strong> — risco legal. ';if(em30>0)insFer+='⏰ '+em30+' a vencer em 30 dias. ';if(fAtivas>0)insFer+='🌴 '+fAtivas+' em gozo. ';if(pendFer>0)insFer+='📬 '+pendFer+' pendente(s). ';if(!insFer)insFer='✅ Sem irregularidades.';setDRH('ai-ferias-insight',insFer,true);let totPos=0,totNeg=0,qtdPos=0,qtdNeg=0;Object.keys(rh).forEach(mat=>{const bh=typeof rh[mat].banco==='number'?rh[mat].banco:0;if(bh>0){totPos+=bh;qtdPos++;}else if(bh<0){totNeg+=Math.abs(bh);qtdNeg++;}});const fmtBH=h=>{const a=Math.abs(h);return(h<0?'-':'+')+String(Math.floor(a)).padStart(2,'0')+':'+String(Math.round((a-Math.floor(a))*60)).padStart(2,'0');};setDRH('drh-bh-positivo',fmtBH(totPos));setDRH('drh-bh-negativo',fmtBH(-totNeg));setDRH('drh-bh-qtd-pos',qtdPos);setDRH('drh-bh-qtd-neg',qtdNeg);setDRH('ai-bh-insight',(totPos>100?'⚠️ Saldo positivo elevado. ':qtdNeg>ativos*0.2?'🔴 +20% com saldo negativo. ':'')+'✅ OK',true);let totalAbs=0,diasAbs=0,motCount={},pesCount={},absMeses={};lista.forEach(c=>{const mat=c['Matrícula']||c['Matricula']||c['MATRICULA']||'';const nome=c['Nome']||c['NOME']||mat;((rh[mat]||{}).faltas||[]).forEach(f=>{totalAbs++;const dias=parseInt(f.dias)||1;diasAbs+=dias;motCount[f.motivo||'Outro']=(motCount[f.motivo||'Outro']||0)+dias;pesCount[nome]=(pesCount[nome]||0)+dias;const mk=(f.data||'').substring(0,7)||'N/A';absMeses[mk]=(absMeses[mk]||0)+dias;});});const topMot=Object.keys(motCount).sort((a,b)=>motCount[b]-motCount[a])[0]||'—';const topPes=Object.keys(pesCount).sort((a,b)=>pesCount[b]-pesCount[a])[0]||'—';setDRH('drh-abs-total',totalAbs);setDRH('drh-abs-dias',diasAbs);setDRH('drh-abs-motivo',topMot.length>22?topMot.slice(0,20)+'...':topMot);setDRH('drh-abs-pessoa',topPes.length>22?topPes.slice(0,20)+'...':topPes);renderChartAbsMotivo(motCount);renderChartAbsMensal2(absMeses);const taxa=ativos>0?((diasAbs/(ativos*22))*100).toFixed(1):0;setDRH('ai-abs-insight','📊 Taxa: <strong>'+taxa+'%</strong>. '+(parseFloat(taxa)>4?'🚨 Acima do limite. Motivo: <strong>'+topMot+'</strong>.':parseFloat(taxa)>2?'⚠️ Moderada.':'✅ Ok.'),true);let pTotal=0,pFaltas=0,pMarcacoes=0,pOk=0,pontoTipos={};Object.keys(rh).forEach(mat=>{((rh[mat]||{}).ponto||[]).forEach(p=>{pTotal++;const tp=(p.tipo||'').toLowerCase(),ac=(p.acao||'').toLowerCase();if(tp.includes('falta sem'))pFaltas++;if(tp.includes('marcação')||tp.includes('marcacao'))pMarcacoes++;if(ac.includes('justificado')||ac.includes('arquivado'))pOk++;pontoTipos[p.tipo||'Outro']=(pontoTipos[p.tipo||'Outro']||0)+1;});});setDRH('drh-ponto-total',pTotal);setDRH('drh-ponto-faltas',pFaltas);setDRH('drh-ponto-marcacoes',pMarcacoes);setDRH('drh-ponto-ok',pOk);renderChartPontoTipo(pontoTipos);setDRH('ai-ponto-insight',pTotal>0?'🗓 <strong>'+pTotal+' ocorrência(s)</strong>.'+(pFaltas>5?' ⚠️ Faltas: '+pFaltas+'.':''):'Nenhuma ocorrência.',true);let epiTotal=0,epiEntg=0;if(epiRegs)epiRegs.forEach(d=>{epiTotal++;if(d.data().status==='entregue')epiEntg++;});setDRH('drh-epi-total',epiTotal);setDRH('drh-epi-entregues',epiEntg);setDRH('drh-epi-pendentes',epiTotal-epiEntg);}catch(e){console.error('Dashboard RH:',e);}finally{if(btn){btn.disabled=false;btn.innerHTML='<i class="fas fa-sync-alt"></i> Atualizar Painel';}}};
 function renderChartAbsMensal(x){}
 function renderChartAbsMensal2(meses){const c=document.getElementById('chartAbsMensal');if(!c)return;if(window._dashCharts&&window._dashCharts.absMensal)window._dashCharts.absMensal.destroy();const sorted=Object.keys(meses).sort();if(!sorted.length)return;if(!window._dashCharts)window._dashCharts={};window._dashCharts.absMensal=new Chart(c.getContext('2d'),{type:'bar',data:{labels:sorted,datasets:[{label:'Dias',data:sorted.map(k=>meses[k]),backgroundColor:'#e74c3c99',borderColor:'#e74c3c',borderWidth:1}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{font:{size:10}}}}}});}
 function renderChartPontoTipo(tipos){const c=document.getElementById('chartPontoTipo');if(!c)return;if(window._dashCharts&&window._dashCharts.pontoTipo)window._dashCharts.pontoTipo.destroy();if(!tipos||!Object.keys(tipos).length)return;if(!window._dashCharts)window._dashCharts={};const labels=Object.keys(tipos);window._dashCharts.pontoTipo=new Chart(c.getContext('2d'),{type:'bar',data:{labels,datasets:[{label:'Ocorrencias',data:labels.map(k=>tipos[k]),backgroundColor:'#8e44ad99',borderColor:'#8e44ad',borderWidth:1}]},options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{font:{size:10}}}}}});}
@@ -2201,9 +1878,7 @@ window.subTabAbs = function(aba) {
 };
 
 window.updatePublicFormFields = function() { const sel = document.getElementById('pf_colab_select'); if(!sel.value) return; document.getElementById('pf_mat').value = sel.value; document.getElementById('pf_nome').value = sel.options[sel.selectedIndex].text; };
-async function submitPublicForm() { const nome = document.getElementById('pf_nome').value; const mat = document.getElementById('pf_mat').value; const inicio = document.getElementById('pf_inicio').value; const fim = document.getElementById('pf_fim').value; const vendeuRadio = document.querySelector('input[name="pf_vender"]:checked'); const vendeu = vendeuRadio ? vendeuRadio.value : 'nao'; if(!mat||!nome) return alert("Selecione o seu nome!"); if(!inicio||!fim) return alert("Preencha Início e Retorno!"); const payload = { matricula:mat, nome:nome, dataInicio:inicio, dataRetorno:fim, vendeuDias:vendeu==='sim', timestamp:new Date().getTime(), status:'PENDENTE' }; try { const btn = document.querySelector('.pf-btn'); btn.innerText='A ENVIAR...'; btn.disabled=true; const _fi=await window.getFromDB('feriasInbox')||[];
-    payload.id='req_'+Date.now(); _fi.push(payload);
-    await window.saveToDB('feriasInbox',_fi);
+async function submitPublicForm() { const nome = document.getElementById('pf_nome').value; const mat = document.getElementById('pf_mat').value; const inicio = document.getElementById('pf_inicio').value; const fim = document.getElementById('pf_fim').value; const vendeuRadio = document.querySelector('input[name="pf_vender"]:checked'); const vendeu = vendeuRadio ? vendeuRadio.value : 'nao'; if(!mat||!nome) return alert("Selecione o seu nome!"); if(!inicio||!fim) return alert("Preencha Início e Retorno!"); const payload = { matricula:mat, nome:nome, dataInicio:inicio, dataRetorno:fim, vendeuDias:vendeu==='sim', timestamp:new Date().getTime(), status:'PENDENTE' }; try { const btn = document.querySelector('.pf-btn'); btn.innerText='A ENVIAR...'; btn.disabled=true; await dbCloud.collection('logistica_ferias_inbox').add(payload);
             document.getElementById('pf-form-view').style.display = 'none';
             document.getElementById('pf-success-view').style.display = 'block';
         } catch(e) {
@@ -2234,7 +1909,7 @@ async function submitPublicForm() { const nome = document.getElementById('pf_nom
         if(!inboxBody) return;
         inboxBody.innerHTML = '<div style="padding:20px; text-align:center; color:#999; font-size:12px;">A carregar solicitações...</div>';
         try {
-            const _allFI=await window.getFromDB('feriasInbox')||[];const snap={empty:!_allFI.filter(d=>d.status==='PENDENTE').length,forEach:function(cb){_allFI.filter(d=>d.status==='PENDENTE').forEach(d=>cb({id:d.id,data:function(){return d;}}))}};
+            const snap = await dbCloud.collection('logistica_ferias_inbox').where('status', '==', 'PENDENTE').get();
             if(snap.empty) {
                 inboxBody.innerHTML = '<div style="padding:20px; text-align:center; color:#999; font-size:12px;">Nenhuma nova solicitação pendente.</div>';
                 return;
@@ -2262,7 +1937,7 @@ async function submitPublicForm() { const nome = document.getElementById('pf_nom
             rhData[mat].vendeu10Dias = vendeuDias;
             rhData[mat].statusManual = 'AUTO';
             if (window.saveToDB) await window.saveToDB('rhData', rhData);
-            const _fb1=await window.getFromDB('feriasInbox')||[];const _fi1=_fb1.findIndex(d=>d.id===docId);if(_fi1>=0)_fb1[_fi1].status='APROVADO';await window.saveToDB('feriasInbox',_fb1);
+            await dbCloud.collection('logistica_ferias_inbox').doc(docId).update({status: 'APROVADO'});
             renderRHQuad(); renderFerias(); loadInbox();
             alert("Férias aprovadas e lançadas com sucesso no quadro principal!");
         } catch(e) { alert("Erro ao aprovar."); }
@@ -2271,7 +1946,7 @@ async function submitPublicForm() { const nome = document.getElementById('pf_nom
     window.rejeitarFerias = async function(docId) {
         if(!confirm("Tem a certeza que deseja rejeitar esta solicitação? Ela será removida da caixa de entrada.")) return;
         try {
-            const _fb2=await window.getFromDB('feriasInbox')||[];const _fi2=_fb2.findIndex(d=>d.id===docId);if(_fi2>=0)_fb2[_fi2].status='REJEITADO';await window.saveToDB('feriasInbox',_fb2);
+            await dbCloud.collection('logistica_ferias_inbox').doc(docId).update({status: 'REJEITADO'});
             loadInbox();
         } catch(e) { alert("Erro ao rejeitar."); }
     };
@@ -2795,7 +2470,7 @@ window.confirmarEntregaParcial = async function() {
         try {
             var upd = { dataEntrega: dataEntrega, status: 'parcial' };
             EPI_ITEMS.forEach(function(it){ if (marcados[it.k]) upd[it.k + '_entregue'] = true; });
-            const _upd=await window.getFromDB('epi_registros')||[];const _ui=_upd.findIndex(r=>r.id===docId);if(_ui>=0)Object.assign(_upd[_ui],upd);await window.saveToDB('epi_registros',_upd);
+            await dbCloud.collection('logistica_epi_registros').doc(docId).update(upd);
         } catch(e) { alert('Erro ao salvar: ' + e.message); }
     }
 };
