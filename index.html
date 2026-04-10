@@ -25,23 +25,6 @@
 .version-badge-new { background: #e74c3c; color: white; font-size: 9px; font-weight: 900; padding: 2px 5px; border-radius: 8px; margin-left: 4px; vertical-align: middle; animation: pulse-badge 2s infinite; }
 @keyframes pulse-badge { 0%,100%{opacity:1} 50%{opacity:0.6} }
 
-/* Dashboard RH */
-#view-rh-dashboard { }
-.dash-rh-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-bottom: 16px; }
-.dash-rh-kpi { background: white; border-radius: 10px; padding: 16px; border-left: 4px solid #3498db; box-shadow: 0 2px 8px rgba(0,0,0,0.07); display: flex; align-items: center; justify-content: space-between; }
-.dash-rh-kpi .drk-lbl { font-size: 11px; font-weight: 700; color: #777; text-transform: uppercase; }
-.dash-rh-kpi .drk-val { font-size: 26px; font-weight: 900; color: #2c3e50; line-height: 1; }
-.dash-rh-kpi .drk-sub { font-size: 10px; color: #aaa; margin-top: 2px; }
-.dash-rh-kpi i { font-size: 30px; color: #ecf0f1; }
-.dash-rh-section { background: white; border-radius: 10px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); margin-bottom: 16px; }
-.dash-rh-section h4 { margin: 0 0 12px 0; font-size: 13px; font-weight: 800; color: #2c3e50; text-transform: uppercase; border-bottom: 2px solid #ecf0f1; padding-bottom: 8px; }
-.dash-rh-section h4 i { margin-right: 6px; }
-.dash-charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
-.dash-chart-box { background: white; border-radius: 10px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); }
-.dash-chart-box h4 { margin: 0 0 10px 0; font-size: 12px; font-weight: 800; color: #555; text-transform: uppercase; }
-.ai-insight-box { background: linear-gradient(135deg, #667eea22, #764ba222); border: 1px solid #764ba255; border-radius: 8px; padding: 12px; margin-top: 10px; font-size: 11px; color: #444; line-height: 1.6; }
-.ai-insight-box strong { color: #764ba2; }
-
 /* Botão excluir colaborador */
 .btn-del-colab { background: #c0392b; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 10px; font-weight: 700; cursor: pointer; transition: background 0.2s; }
 .btn-del-colab:hover { background: #96281b; }
@@ -402,7 +385,7 @@
                     <div class="meta-grid" id="metaContainer"></div>
                     <div class="upload-row">
                         <div class="up-box" id="bx1"><label class="btn btn-blue" style="width:100%">Planejamento do Dia <input type="file" id="f1" hidden onclick="this.value=null"></label><div id="msg1" style="font-size:10px;">Pendente</div></div>
-                        <div class="up-box" id="bx2"><label class="btn btn-gray" style="width:100%">Estoque Atual (Picking)<input type="file" id="f2" hidden onclick="this.value=null"></label><div id="msg2" style="font-size:10px;">Pendente</div></div>
+                        <div class="up-box" id="bx2"><label class="btn btn-gray" style="width:100%">Estoque Atual (Picking) <input type="file" id="f2" hidden onclick="this.value=null"></label><div id="msg2" style="font-size:10px;">Pendente</div></div>
                         <button class="btn btn-green" id="btnCalc" disabled onclick="runCalc()">CALCULAR DIA</button>
                     </div>
                 </div>
@@ -792,7 +775,10 @@
                         </div>
                         <button class="btn btn-purple" onclick="copyGenericFormLink()"><i class="fab fa-whatsapp"></i> LINK P/ WHATSAPP</button>
                         <button class="btn btn-blue" onclick="window.open(window.location.href.split('?')[0] + '?mode=formferias', '_blank')"><i class="fas fa-external-link-alt"></i> TESTAR FORMULÁRIO</button>
-                        <label class="btn btn-teal"><i class="fas fa-file-pdf"></i> Importar Escala (PDF/Excel) <input type="file" id="f_ferias" accept=".pdf, .xls, .xlsx" hidden onclick="this.value=null"></label>
+                        <input type="file" id="f_ferias_novo" accept=".pdf" onchange="window.importarFeriasPDF(event)" style="display:none;">
+<button onclick="document.getElementById('f_ferias_novo').click()" class="btn btn-teal">
+    <i class="fas fa-file-pdf"></i> Importar PDF Férias
+</button>
                     </div>
                     <table style="margin-top:15px; font-size:11px;">
                         <thead>
@@ -975,179 +961,7 @@
                 </div>
             </div>
         </div>
-
-        <!-- ============================================================
-             DASHBOARD RH - NOVA ABA
-        ============================================================ -->
-        <div id="view-rh-dashboard" class="view-section">
-            <div class="scroll-content">
-
-                <!-- Header -->
-                <div class="card" style="border-left: 5px solid #8e44ad; background: linear-gradient(135deg, #f5f0ff, #fff);">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <div>
-                            <h3 style="margin:0; color:#8e44ad;"><i class="fas fa-chart-line"></i> Dashboard RH — Painel Consolidado</h3>
-                            <p style="font-size:11px; color:#888; margin:4px 0 0;">Dados em tempo real das abas Colaboradores, Férias, Banco de Horas, Absenteísmo e Ponto Mensal.</p>
-                        </div>
-                        <button class="btn" style="background:#8e44ad; color:white;" onclick="renderDashboardRH()"><i class="fas fa-sync-alt"></i> Atualizar Painel</button>
-                    </div>
-                </div>
-
-                <!-- Seção: Colaboradores -->
-                <div class="dash-rh-section">
-                    <h4><i class="fas fa-users" style="color:#e67e22;"></i> Colaboradores — Movimentação Anual</h4>
-                    <div class="dash-rh-grid">
-                        <div class="dash-rh-kpi" style="border-left-color:#27ae60;">
-                            <div><div class="drk-lbl">Entradas no Ano</div><div class="drk-val" id="drh-entradas">0</div><div class="drk-sub">Admissões em <span id="drh-ano-label">2025</span></div></div>
-                            <i class="fas fa-user-plus" style="color:#d5f5e3;"></i>
-                        </div>
-                        <div class="dash-rh-kpi" style="border-left-color:#e74c3c;">
-                            <div><div class="drk-lbl">Saídas no Ano</div><div class="drk-val" id="drh-saidas">0</div><div class="drk-sub">Desligamentos</div></div>
-                            <i class="fas fa-user-minus" style="color:#fadbd8;"></i>
-                        </div>
-                        <div class="dash-rh-kpi" style="border-left-color:#f39c12;">
-                            <div><div class="drk-lbl">Índice de Turnover</div><div class="drk-val" id="drh-turnover">0%</div><div class="drk-sub">(Saídas / Média) × 100</div></div>
-                            <i class="fas fa-retweet" style="color:#fef9e7;"></i>
-                        </div>
-                        <div class="dash-rh-kpi" style="border-left-color:#3498db;">
-                            <div><div class="drk-lbl">Quadro Ativo</div><div class="drk-val" id="drh-ativos">0</div><div class="drk-sub">Colaboradores ativos</div></div>
-                            <i class="fas fa-users" style="color:#d6eaf8;"></i>
-                        </div>
-                        <div class="dash-rh-kpi" style="border-left-color:#e74c3c;">
-                            <div><div class="drk-lbl">Vagas em Reposição</div><div class="drk-val" id="drh-reposicoes">0</div><div class="drk-sub">Pendentes de preenchimento</div></div>
-                            <i class="fas fa-user-clock" style="color:#fadbd8;"></i>
-                        </div>
-                    </div>
-                    <div class="ai-insight-box" id="ai-colab-insight">
-                        <strong><i class="fas fa-robot"></i> Análise IA:</strong> Carregando análise automática...
-                    </div>
-                </div>
-
-                <!-- Seção: Férias -->
-                <div class="dash-rh-section">
-                    <h4><i class="fas fa-umbrella-beach" style="color:#16a085;"></i> Férias — Análise de Gozamento</h4>
-                    <div class="dash-rh-grid">
-                        <div class="dash-rh-kpi" style="border-left-color:#16a085;">
-                            <div><div class="drk-lbl">Em Férias Agora</div><div class="drk-val" id="drh-ferias-ativas">0</div><div class="drk-sub">Colaboradores ausentes</div></div>
-                            <i class="fas fa-sun" style="color:#d1f2eb;"></i>
-                        </div>
-                        <div class="dash-rh-kpi" style="border-left-color:#e74c3c;">
-                            <div><div class="drk-lbl">Férias Vencidas</div><div class="drk-val" id="drh-ferias-vencidas">0</div><div class="drk-sub">Limite já ultrapassado</div></div>
-                            <i class="fas fa-exclamation-triangle" style="color:#fadbd8;"></i>
-                        </div>
-                        <div class="dash-rh-kpi" style="border-left-color:#f39c12;">
-                            <div><div class="drk-lbl">A vencer em 30 dias</div><div class="drk-val" id="drh-ferias-a-vencer">0</div><div class="drk-sub">Atenção requerida</div></div>
-                            <i class="fas fa-clock" style="color:#fef9e7;"></i>
-                        </div>
-                        <div class="dash-rh-kpi" style="border-left-color:#3498db;">
-                            <div><div class="drk-lbl">Solicitações Pendentes</div><div class="drk-val" id="drh-ferias-pendentes">0</div><div class="drk-sub">Aguardando aprovação</div></div>
-                            <i class="fas fa-hourglass-half" style="color:#d6eaf8;"></i>
-                        </div>
-                    </div>
-                    <div class="ai-insight-box" id="ai-ferias-insight">
-                        <strong><i class="fas fa-robot"></i> Análise IA:</strong> Carregando análise automática...
-                    </div>
-                </div>
-
-                <!-- Seção: Banco de Horas -->
-                <div class="dash-rh-section">
-                    <h4><i class="fas fa-business-time" style="color:#2980b9;"></i> Banco de Horas</h4>
-                    <div class="dash-rh-grid">
-                        <div class="dash-rh-kpi" style="border-left-color:#27ae60;">
-                            <div><div class="drk-lbl">Saldo Positivo Total</div><div class="drk-val" id="drh-bh-positivo" style="font-size:18px;">00:00</div><div class="drk-sub">Horas a compensar</div></div>
-                            <i class="fas fa-plus-circle" style="color:#d5f5e3;"></i>
-                        </div>
-                        <div class="dash-rh-kpi" style="border-left-color:#e74c3c;">
-                            <div><div class="drk-lbl">Saldo Negativo Total</div><div class="drk-val" id="drh-bh-negativo" style="font-size:18px;">00:00</div><div class="drk-sub">Horas em débito</div></div>
-                            <i class="fas fa-minus-circle" style="color:#fadbd8;"></i>
-                        </div>
-                        <div class="dash-rh-kpi" style="border-left-color:#3498db;">
-                            <div><div class="drk-lbl">Com Saldo Positivo</div><div class="drk-val" id="drh-bh-qtd-pos">0</div><div class="drk-sub">Colaboradores</div></div>
-                            <i class="fas fa-users" style="color:#d6eaf8;"></i>
-                        </div>
-                        <div class="dash-rh-kpi" style="border-left-color:#e67e22;">
-                            <div><div class="drk-lbl">Com Saldo Negativo</div><div class="drk-val" id="drh-bh-qtd-neg">0</div><div class="drk-sub">Colaboradores</div></div>
-                            <i class="fas fa-users" style="color:#fdebd0;"></i>
-                        </div>
-                    </div>
-                    <div class="ai-insight-box" id="ai-bh-insight">
-                        <strong><i class="fas fa-robot"></i> Análise IA:</strong> Carregando análise automática...
-                    </div>
-                </div>
-
-                <!-- Seção: Absenteísmo -->
-                <div class="dash-rh-section">
-                    <h4><i class="fas fa-user-injured" style="color:#c0392b;"></i> Absenteísmo — Análise Completa</h4>
-                    <div class="dash-rh-grid">
-                        <div class="dash-rh-kpi" style="border-left-color:#c0392b;">
-                            <div><div class="drk-lbl">Total de Ocorrências</div><div class="drk-val" id="drh-abs-total">0</div><div class="drk-sub">Registadas no sistema</div></div>
-                            <i class="fas fa-file-medical" style="color:#fadbd8;"></i>
-                        </div>
-                        <div class="dash-rh-kpi" style="border-left-color:#e74c3c;">
-                            <div><div class="drk-lbl">Dias Perdidos</div><div class="drk-val" id="drh-abs-dias">0</div><div class="drk-sub">Total de dias de afastamento</div></div>
-                            <i class="fas fa-calendar-times" style="color:#fadbd8;"></i>
-                        </div>
-                        <div class="dash-rh-kpi" style="border-left-color:#f39c12;">
-                            <div><div class="drk-lbl">Motivo Mais Frequente</div><div class="drk-val" id="drh-abs-motivo" style="font-size:14px; font-weight:800;">—</div><div class="drk-sub">Principal causa</div></div>
-                            <i class="fas fa-search" style="color:#fef9e7;"></i>
-                        </div>
-                        <div class="dash-rh-kpi" style="border-left-color:#8e44ad;">
-                            <div><div class="drk-lbl">Colaborador Mais Ausente</div><div class="drk-val" id="drh-abs-pessoa" style="font-size:13px; font-weight:800;">—</div><div class="drk-sub">Em número de dias</div></div>
-                            <i class="fas fa-user-slash" style="color:#e8daef;"></i>
-                        </div>
-                    </div>
-                    <div class="dash-charts-row">
-                        <div class="dash-chart-box">
-                            <h4>Ausências por Motivo</h4>
-                            <canvas id="chartAbsMotivo" height="200"></canvas>
-                        </div>
-                        <div class="dash-chart-box">
-                            <h4>Evolução Mensal de Ausências</h4>
-                            <canvas id="chartAbsMensal" height="200"></canvas>
-                        </div>
-                    </div>
-                    <div class="ai-insight-box" id="ai-abs-insight">
-                        <strong><i class="fas fa-robot"></i> Análise IA:</strong> Carregando análise automática...
-                    </div>
-                </div>
-
-                <div class="dash-rh-section"><h4><i class="fas fa-vest" style="color:#8e44ad;"></i> Uniforme &amp; EPI</h4><div class="dash-rh-grid"><div class="dash-rh-kpi" style="border-left-color:#8e44ad;"><div><div class="drk-lbl">Total Aprovados</div><div class="drk-val" id="drh-epi-total">—</div><div class="drk-sub">Registros na nuvem</div></div><i class="fas fa-vest" style="color:#e8daef;font-size:28px;"></i></div><div class="dash-rh-kpi" style="border-left-color:#27ae60;"><div><div class="drk-lbl">Entregues</div><div class="drk-val" id="drh-epi-entregues">—</div><div class="drk-sub">Confirmados</div></div><i class="fas fa-check-double" style="color:#d5f5e3;font-size:28px;"></i></div><div class="dash-rh-kpi" style="border-left-color:#f39c12;"><div><div class="drk-lbl">Aguard. Entrega</div><div class="drk-val" id="drh-epi-pendentes">—</div><div class="drk-sub">A entregar</div></div><i class="fas fa-box" style="color:#fef9e7;font-size:28px;"></i></div></div></div>
-                <!-- Secao: Ponto Mensal -->
-                <div class="dash-rh-section">
-                    <h4><i class="fas fa-user-clock" style="color:#8e44ad;"></i> Ponto Mensal — Indicadores</h4>
-                    <div class="dash-rh-grid">
-                        <div class="dash-rh-kpi" style="border-left-color:#8e44ad;">
-                            <div><div class="drk-lbl">Ocorrências no Mês</div><div class="drk-val" id="drh-ponto-total">0</div><div class="drk-sub">Período atual</div></div>
-                            <i class="fas fa-clipboard-list" style="color:#e8daef;"></i>
-                        </div>
-                        <div class="dash-rh-kpi" style="border-left-color:#e74c3c;">
-                            <div><div class="drk-lbl">Faltas sem Justificativa</div><div class="drk-val" id="drh-ponto-faltas">0</div><div class="drk-sub">No período</div></div>
-                            <i class="fas fa-times-circle" style="color:#fadbd8;"></i>
-                        </div>
-                        <div class="dash-rh-kpi" style="border-left-color:#f39c12;">
-                            <div><div class="drk-lbl">Marcações Incorretas</div><div class="drk-val" id="drh-ponto-marcacoes">0</div><div class="drk-sub">Requerem correção</div></div>
-                            <i class="fas fa-edit" style="color:#fef9e7;"></i>
-                        </div>
-                        <div class="dash-rh-kpi" style="border-left-color:#27ae60;">
-                            <div><div class="drk-lbl">Regularizados</div><div class="drk-val" id="drh-ponto-ok">0</div><div class="drk-sub">Justificados/Arquivados</div></div>
-                            <i class="fas fa-check-circle" style="color:#d5f5e3;"></i>
-                        </div>
-                    </div>
-                    <div class="dash-chart-box" style="margin-top:10px;">
-                        <h4>Ocorrências por Tipo (Ponto)</h4>
-                        <canvas id="chartPontoTipo" height="150"></canvas>
-                    </div>
-                    <div class="ai-insight-box" id="ai-ponto-insight">
-                        <strong><i class="fas fa-robot"></i> Análise IA:</strong> Carregando análise automática...
-                    </div>
-                </div>
-
-            </div>
-        </div>
-
-    </div><!-- /wrapper-rh -->
-</div><!-- /container -->
-
+        
 <!-- ================================================================
      MODAIS (inalterados + novos)
 ================================================================ -->

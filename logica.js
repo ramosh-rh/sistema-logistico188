@@ -1,3 +1,17 @@
+// =========================================================
+// KIT DE PRIMEIROS SOCORROS (EVITA CURTO-CIRCUITO NO JS)
+// =========================================================
+window.renderPontoMensal = window.renderPontoMensal || function() {};
+window.loadInbox = window.loadInbox || function() {};
+window.renderAbs = window.renderAbs || function() {};
+
+// Se o sistema procurar o botão f2 e não achar, criamos um fantasma
+if (!document.getElementById('f2')) {
+    let fakeF2 = document.createElement('input');
+    fakeF2.type = 'file'; fakeF2.id = 'f2'; fakeF2.style.display = 'none';
+    document.body.appendChild(fakeF2);
+}
+// =========================================================
 // =========================================================================
 // NÚCLEO DO SISTEMA v163.0 — CLOUD, RH INTELIGENTE E LOGÍSTICA (CORRIGIDO)
 // =========================================================================

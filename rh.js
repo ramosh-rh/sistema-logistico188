@@ -120,58 +120,10 @@ function _atualizarKPIs(data) {
     const kpis=document.getElementById('rh-kpis');
     if(kpis&&(data.total||0)>0)kpis.style.display='grid';
 }
-// Expõe para o patch do index.html
-window.updateRHKPIs  = _atualizarKPIs;
-window.atualizarKPIsRH = function(lista) { _atualizarKPIs(lista||[]); };
 
-// =========================================================================
-// FIX 1 — EXCLUIR COLABORADOR (versão definitiva, sobrescreve tudo)
-// =========================================================================
-window.excluirColaboradorRH = async function (index) {
-    const lista = _getLista();
-    if (!lista || index < 0 || index >= lista.length) { alert('Colaborador não encontrado.'); return; }
-
-    const colab = lista[index];
-    const mat   = colab['Matrícula']||colab['Matricula']||colab['MATRICULA']||colab['matricula']||'';
-    const nome  = colab['Nome']||colab['NOME']||colab['nome']||mat;
-
-    const motivo = prompt(`Excluir: ${nome} (${mat})\n\nMotivo:\n1 = Demissão\n2 = Transferência\n3 = Outro\n\nDigite:`, '1');
-    if (motivo === null) return;
-    const motivoTexto = ({'1':'Demissão','2':'Transferência','3':'Outro'})[motivo]||'Não informado';
-
-    try {
-        lista.splice(index, 1);
-        window.dRH = lista;
-        if (window.rhData && window.rhData[mat]) delete window.rhData[mat];
-
-        // Salva em ambos os destinos
-        _saveRHList(lista);
-        if (window.saveToDB) {
-            window.saveToDB('dRH',    window.dRH);
-            window.saveToDB('rhData', window.rhData);
-        }
-
-        // Pendência de reposição
-        if (motivo==='1'||motivo==='2') {
-            try {
-                const arr=JSON.parse(localStorage.getItem('pendencias_reposicao')||'[]');
-                arr.push({id:Date.now(),exColab:nome,matriculaEx:mat,motivo:motivoTexto,data:new Date().toLocaleDateString('pt-BR'),funcao:colab['Função']||colab['Funcao']||colab['FUNÇÃO']||colab['funcao']||''});
-                localStorage.setItem('pendencias_reposicao',JSON.stringify(arr));
-                if(typeof renderReposicoes==='function')renderReposicoes();
-            }catch(e){}
-        }
-
-        // Atualiza views
-        window.renderRHQuad();
-        if(typeof window.renderFerias==='function') window.renderFerias();
-        if(typeof renderBanco==='function')         renderBanco();
-        if(typeof renderAbs==='function')           renderAbs();
-        if(typeof renderPontoMensal==='function')   renderPontoMensal();
-        if(typeof showToast==='function')           showToast(`${nome} removido.`, 'warn');
-
-    } catch(e) { alert('Erro ao excluir: '+e.message); }
-};
-
+// =====================================================
+// EXCLUIR COLABORADOR DEFINITIVO (CORRIGIDO)
+// =====================================================
 // =========================================================================
 // MODAIS
 // =========================================================================
@@ -251,84 +203,9 @@ window.renderFerias = function () {
 window.updateRHData = async function(mat,field,val,inputEl){ensureRhData(mat);window.rhData[mat][field]=val;if(window.saveToDB)window.saveToDB('rhData',window.rhData);if(inputEl&&inputEl.type!=='checkbox'){inputEl.style.backgroundColor='#d4edda';setTimeout(()=>{inputEl.style.backgroundColor='';},1000);}};
 window.renderBanco = function(){const tb=document.getElementById('tbBanco');if(!tb)return;const lista=_getLista();if(!lista.length)return;tb.innerHTML='';let tot=0;lista.forEach(r=>{const mat=r['Matrícula']||r['Matricula']||r['MATRICULA']||r['matricula']||'-';const nome=r['Nome']||r['NOME']||r['nome']||'-';const st=(r['Status']||r['STATUS']||r['status']||'-').toUpperCase();if(nome==='-'||st==='INATIVO')return;ensureRhData(mat);const h=window.rhData[mat].banco||0;tot+=h;const c=h>0?'var(--green)':(h<0?'var(--red)':'#555');tb.innerHTML+=`<tr><td style="font-weight:bold;">${mat}</td><td>${nome}</td><td><strong style="color:${c};font-size:16px;">${formatDecimalToTime(h)}</strong></td></tr>`;});if(typeof safeUpdate==='function')safeUpdate('bh-global',formatDecimalToTime(tot));};
 
-// =========================================================================
-// FIX 2 — IMPORT FÉRIAS: PDF + Excel (usa pdfjsLib, variável correta do CDN)
-// =========================================================================
-document.addEventListener('DOMContentLoaded', function () {
-
-    // Import quadro RH
-    const fRH=document.getElementById('f_rh');
-    if(fRH){fRH.addEventListener('change',function(){if(typeof XLSX==='undefined'||!this.files[0])return;document.getElementById('loading').style.display='flex';const rd=new FileReader();rd.onload=async e=>{try{const wb=XLSX.read(e.target.result,{type:'array'});const sh=wb.Sheets[wb.SheetNames[0]];const raw=XLSX.utils.sheet_to_json(sh,{header:1});let hr=0;for(let i=0;i<Math.min(20,raw.length);i++){const s=(raw[i]||[]).join('').toUpperCase();if(s.includes('NOME')&&(s.includes('MATRICULA')||s.includes('MATRÍCULA'))){hr=i;break;}}window.dRH=XLSX.utils.sheet_to_json(sh,{range:hr,raw:false});_saveRHList(window.dRH);if(window.saveToDB)await window.saveToDB('dRH',window.dRH);window.renderRHQuad();window.renderFerias();window.renderBanco();if(typeof renderAbs==='function')renderAbs();if(typeof renderPontoMensal==='function')renderPontoMensal();alert('Quadro importado!');}catch(err){alert('Erro: '+err);}document.getElementById('loading').style.display='none';};rd.readAsArrayBuffer(this.files[0]);});}
-
-    // Import banco horas
-    const fBanco=document.getElementById('f_banco');
-    if(fBanco){fBanco.addEventListener('change',function(){if(typeof XLSX==='undefined'||!this.files[0])return;document.getElementById('loading').style.display='flex';const rd=new FileReader();rd.onload=async e=>{try{const wb=XLSX.read(e.target.result,{type:'array'});const raw=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{raw:false});raw.forEach(row=>{let mat=row['Matrícula']||row['Matricula']||row['MATRICULA'];const nm=row['Nome']||row['NOME']||row['NOME COMPLETO'];const saldo=row['Total Banco']||row['TOTAL BANCO']||row['Saldo']||row['SALDO']||row['Horas']||row['Banco'];if(!mat&&nm){const emp=window.dRH.find(e=>String(e['Nome']||e['NOME']).toUpperCase().trim()===String(nm).toUpperCase().trim());if(emp)mat=emp['Matrícula']||emp['Matricula'];}if(mat&&saldo!==undefined){ensureRhData(mat);let v=String(saldo).trim(),num=0;if(v.includes(':')){let sign=1;if(v.startsWith('-')){sign=-1;v=v.substring(1);}else if(v.startsWith('+'))v=v.substring(1);const pts=v.split(':');num=sign*((parseInt(pts[0])||0)+((parseInt(pts[1])||0)/60));}else{num=parseFloat(v.replace(',','.').replace(/[^0-9.-]/g,''))||0;}window.rhData[mat].banco=parseFloat(num.toFixed(2));}});if(window.saveToDB)await window.saveToDB('rhData',window.rhData);window.renderBanco();alert('Banco de Horas importado!');}catch(err){alert('Erro: '+err);}document.getElementById('loading').style.display='none';this.value='';};rd.readAsArrayBuffer(this.files[0]);});}
-
-    // Import Férias (PDF ou Excel)
-    const fFerias=document.getElementById('f_ferias');
-    if(fFerias){
-        fFerias.addEventListener('change', function() {
-            if(!this.files[0]) return;
-            const file=this.files[0];
-            const isPDF=file.name.toLowerCase().endsWith('.pdf')||file.type==='application/pdf';
-            document.getElementById('loading').style.display='flex';
-            if(document.getElementById('loadMsg')) document.getElementById('loadMsg').innerText='Lendo escala de férias...';
-            const rd=new FileReader();
-            rd.onload = async e => {
-                try {
-                    if (isPDF) await _lerPDFFerias(e.target.result);
-                    else       await _lerExcelFerias(e.target.result);
-                } catch(err) {
-                    alert('Erro ao importar escala:\n'+err.message);
-                    console.error(err);
-                }
-                document.getElementById('loading').style.display='none';
-                this.value='';
-            };
-            rd.readAsArrayBuffer(file);
-        });
-    }
-});
-
-// ── LEITOR PDF DE FÉRIAS ──────────────────────────────────────────────────
-async function _lerPDFFerias(arrayBuffer) {
-    // pdfjsLib é o nome global exposto pelo CDN cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js
-    const pdfLib = window.pdfjsLib || window.pdfjs || window['pdfjs-dist/build/pdf'];
-    if (!pdfLib) throw new Error('pdf.js não encontrado. Verifique se o script está carregado no index.html.');
-
-    pdfLib.GlobalWorkerOptions.workerSrc =
-        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
-
-    const pdf = await pdfLib.getDocument({ data: arrayBuffer }).promise;
-    let texto = '';
-
-    for (let p = 1; p <= pdf.numPages; p++) {
-        const page    = await pdf.getPage(p);
-        const content = await page.getTextContent();
-
-        // Agrupa items por posição Y (mesmo Y = mesma linha)
-        const byY = {};
-        content.items.forEach(item => {
-            const y = Math.round(item.transform[5]);
-            byY[y]  = (byY[y]||'') + item.str + ' ';
-        });
-        // Ordena Y descendente (topo da página = Y maior)
-        Object.keys(byY).sort((a,b)=>b-a).forEach(y => {
-            texto += byY[y].trim() + '\n';
-        });
-    }
-
-    _processarEscalaFerias(texto);
-}
-
-async function _lerExcelFerias(arrayBuffer) {
-    if(typeof XLSX==='undefined') throw new Error('Biblioteca Excel não carregada.');
-    const wb   = XLSX.read(arrayBuffer,{type:'array'});
-    const raw  = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1});
-    const text = raw.map(r=>(r||[]).map(c=>String(c).trim()).join(' ')).join('\n');
-    _processarEscalaFerias(text);
-}
-
+// =====================================================
+// NOVO LEITOR E IMPORTADOR DE PDF DE FÉRIAS
+// =====================================================
 // ── PROCESSADOR CENTRAL ───────────────────────────────────────────────────
 function _processarEscalaFerias(texto) {
     const lista = _getLista();
@@ -516,3 +393,246 @@ document.addEventListener('DOMContentLoaded', function () {
         }catch(e){console.warn('RH init:',e);}
     }, 1800);
 });
+
+// =========================================================================
+// EXCLUIR COLABORADOR — versão definitiva (salva no Firebase + localStorage)
+// =========================================================================
+window.excluirColaboradorRH = async function (index) {
+    const lista = _getLista();
+    if (!lista || index < 0 || index >= lista.length) {
+        alert('Colaborador não encontrado.'); return;
+    }
+    const colab   = lista[index];
+    const mat     = colab['Matrícula']||colab['Matricula']||colab['MATRICULA']||colab['matricula']||'';
+    const nome    = colab['Nome']||colab['NOME']||colab['nome']||mat;
+    const funcao  = colab['Função']||colab['Funcao']||colab['FUNÇÃO']||colab['funcao']||'';
+
+    const motivo = prompt(
+        `Excluir: ${nome} (${mat})\n\nMotivo da saída:\n1 = Demissão\n2 = Transferência\n3 = Outro\n\nDigite:`, '1'
+    );
+    if (motivo === null) return; // cancelado
+
+    const motivoTexto = ({'1':'Demissão','2':'Transferência','3':'Outro'})[motivo] || 'Não informado';
+
+    // Remove da lista em memória
+    lista.splice(index, 1);
+    window.dRH = lista;
+
+    // Remove dados de rhData
+    if (window.rhData && window.rhData[mat]) delete window.rhData[mat];
+
+    // Persiste no localStorage IMEDIATAMENTE
+    try { localStorage.setItem('rh_colaboradores', JSON.stringify(window.dRH)); } catch(e) {}
+
+    // Persiste no Firebase (assíncrono — não bloqueia a UI)
+    if (window.saveToDB) {
+        window.saveToDB('dRH',    window.dRH).catch(e => console.warn('saveToDB dRH:', e));
+        window.saveToDB('rhData', window.rhData).catch(e => console.warn('saveToDB rhData:', e));
+    }
+
+    // Registra pendência de reposição
+    if (motivo === '1' || motivo === '2') {
+        try {
+            const arr = JSON.parse(localStorage.getItem('pendencias_reposicao') || '[]');
+            arr.push({ id: Date.now(), exColab: nome, matriculaEx: mat, motivo: motivoTexto,
+                       data: new Date().toLocaleDateString('pt-BR'), funcao: funcao });
+            localStorage.setItem('pendencias_reposicao', JSON.stringify(arr));
+            if (typeof renderReposicoes === 'function') renderReposicoes();
+        } catch(e) {}
+    }
+
+    // Atualiza UI imediatamente — SEM reload
+    window.renderRHQuad();
+    if (typeof window.renderFerias      === 'function') window.renderFerias();
+    if (typeof window.renderBanco       === 'function') window.renderBanco();
+    if (typeof renderAbs                === 'function') renderAbs();
+    if (typeof renderPontoMensal        === 'function') renderPontoMensal();
+
+    if (typeof showToast === 'function')
+        showToast(`${nome} removido do quadro.`, 'warn');
+};
+
+// =========================================================================
+// LEITOR DE ESCALA DE FÉRIAS — PDF (correto) ou Excel
+// Detecta: limiteFerias, periodoAberto, feriasInicio, feriasFim
+// =========================================================================
+(function () {
+    // Substitui o listener do f_ferias definido anteriormente pelo correto
+    document.addEventListener('DOMContentLoaded', function () {
+        const fFerias = document.getElementById('f_ferias');
+        if (!fFerias) return;
+
+        // Remove listeners antigos clonando o elemento
+        const clone = fFerias.cloneNode(true);
+        fFerias.parentNode.replaceChild(clone, fFerias);
+
+        clone.addEventListener('change', function () {
+            if (!this.files[0]) return;
+            const file  = this.files[0];
+            const isPDF = file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf';
+
+            document.getElementById('loading').style.display = 'flex';
+            if (document.getElementById('loadMsg'))
+                document.getElementById('loadMsg').innerText = 'Lendo escala de férias...';
+
+            const rd = new FileReader();
+            rd.onload = async e => {
+                try {
+                    if (isPDF) await _lerPDF_Ferias(e.target.result);
+                    else       await _lerExcel_Ferias(e.target.result);
+                } catch (err) {
+                    alert('Erro ao importar escala:\n' + err.message);
+                    console.error(err);
+                }
+                document.getElementById('loading').style.display = 'none';
+                this.value = '';
+            };
+            rd.readAsArrayBuffer(file);
+        });
+    });
+})();
+
+// ── PDF: extrai texto página por página agrupando por Y ──────────────────
+async function _lerPDF_Ferias(arrayBuffer) {
+    const pdfLib = window.pdfjsLib || window.pdfjs;
+    if (!pdfLib) throw new Error('pdf.js não carregado no index.html.');
+
+    pdfLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+    const pdf = await pdfLib.getDocument({ data: arrayBuffer }).promise;
+    let texto = '';
+
+    for (let p = 1; p <= pdf.numPages; p++) {
+        const page    = await pdf.getPage(p);
+        const content = await page.getTextContent();
+
+        // Agrupa items por linha (posição Y arredondada)
+        const byY = {};
+        content.items.forEach(item => {
+            const y = Math.round(item.transform[5]);
+            byY[y]  = (byY[y] || '') + item.str + ' ';
+        });
+        // Y descendente = ordem natural de leitura (topo → base)
+        Object.keys(byY).map(Number).sort((a, b) => b - a).forEach(y => {
+            texto += byY[y].trim() + '\n';
+        });
+    }
+
+    _processar_EscalaFerias(texto);
+}
+
+// ── Excel: converte para texto e processa igual ao PDF ───────────────────
+async function _lerExcel_Ferias(arrayBuffer) {
+    if (typeof XLSX === 'undefined') throw new Error('Biblioteca Excel não carregada.');
+    const wb   = XLSX.read(arrayBuffer, { type: 'array' });
+    const raw  = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+    const text = raw.map(r => (r || []).map(c => String(c).trim()).join(' ')).join('\n');
+    _processar_EscalaFerias(text);
+}
+
+// ── PROCESSAMENTO CENTRAL: monta blocos por matrícula e extrai datas ─────
+function _processar_EscalaFerias(texto) {
+    const lista   = _getLista();
+    const blocks  = {};
+    let   lastKey = null;
+
+    // Cada linha que começa com 7 dígitos = nova entrada
+    texto.split('\n').forEach(rawLine => {
+        const line = rawLine.trim();
+        if (!line || line.length < 5) return;
+        const m = line.match(/^(\d{7})\b/);
+        if (m) {
+            lastKey = m[1];
+            blocks[lastKey] = (blocks[lastKey] || '') + ' ' + line;
+        } else if (lastKey && /\d{2}\/\d{2}\/\d{4}/.test(line)) {
+            // linha de continuação (nome longo ou datas extras)
+            blocks[lastKey] += ' ' + line;
+        }
+    });
+
+    let count = 0;
+
+    lista.forEach(emp => {
+        const matRh    = String(emp['Matrícula']||emp['Matricula']||emp['MATRICULA']||emp['matricula']||'').trim();
+        const numMatRh = parseInt(matRh, 10);
+        if (!matRh || isNaN(numMatRh)) return;
+
+        let bloco = null;
+        for (const key in blocks) {
+            if (parseInt(key, 10) === numMatRh) { bloco = blocks[key]; break; }
+        }
+        if (!bloco) return;
+
+        ensureRhData(matRh);
+        const rh_entry = window.rhData[matRh];
+
+        // Extrai todas as datas DD/MM/AAAA do bloco
+        const datas = [];
+        let m;
+        const re = /\b(\d{2}\/\d{2}\/\d{4})\b/g;
+        while ((m = re.exec(bloco)) !== null) datas.push(m[1]);
+        if (!datas.length) return;
+
+        // 1. LIMITE PARA INÍCIO = última data do bloco
+        rh_entry.limiteFerias = datas[datas.length - 1].split('/').reverse().join('-');
+
+        // 2. PERÍODO AQUISITIVO = par de datas com ~365 dias de diferença
+        for (let i = 0; i < datas.length - 1; i++) {
+            const [d1, d2] = [datas[i], datas[i+1]].map(d => {
+                const p = d.split('/'); return new Date(p[2], p[1]-1, p[0]);
+            });
+            const diff = Math.abs((d2 - d1) / 86400000);
+            if (diff >= 355 && diff <= 375) {
+                const ini = d1 < d2 ? datas[i] : datas[i+1];
+                const fim = d1 < d2 ? datas[i+1] : datas[i];
+                rh_entry.periodoAberto = `${ini} a ${fim}`;
+                break;
+            }
+        }
+
+        // 3. FÉRIAS MARCADAS = par com 14 a 35 dias de diferença
+        //    Usa a primeira marcação futura (ou a mais recente se passada)
+        const hoje = new Date(); hoje.setHours(0,0,0,0);
+        let melhorMarcacao = null;
+
+        for (let i = 0; i < datas.length - 1; i++) {
+            const [d1, d2] = [datas[i], datas[i+1]].map(d => {
+                const p = d.split('/'); return new Date(p[2], p[1]-1, p[0]);
+            });
+            const diff = Math.abs((d2 - d1) / 86400000);
+            if (diff >= 14 && diff <= 35) {
+                const ini = d1 < d2 ? d1 : d2;
+                const fim = d1 < d2 ? d2 : d1;
+                const iniStr = (d1 < d2 ? datas[i] : datas[i+1]).split('/').reverse().join('-');
+                const fimStr = (d1 < d2 ? datas[i+1] : datas[i]).split('/').reverse().join('-');
+
+                // Prefere marcação que ainda está vigente ou futura
+                if (!melhorMarcacao || ini >= hoje || (ini < hoje && fim >= hoje)) {
+                    melhorMarcacao = { iniStr, fimStr, ini, fim };
+                }
+            }
+        }
+
+        if (melhorMarcacao) {
+            rh_entry.feriasInicio  = melhorMarcacao.iniStr;
+            rh_entry.feriasFim     = melhorMarcacao.fimStr;
+            rh_entry.statusManual  = 'AUTO'; // deixa o sistema calcular se está em férias
+        }
+
+        count++;
+    });
+
+    // Persiste e atualiza tela
+    (async () => {
+        if (window.saveToDB) await window.saveToDB('rhData', window.rhData);
+        window.renderFerias();
+        window.renderRHQuad();
+
+        if (count === 0) {
+            alert('⚠️ Nenhuma correspondência encontrada.\n\nDica: importe o quadro de colaboradores primeiro (aba Colaboradores → Importar Excel).');
+        } else {
+            alert(`✅ Escala lida!\n${count} colaboradores atualizados.\n\nColaboradores em férias hoje aparecerão com badge "EM FÉRIAS" na tabela.`);
+        }
+    })();
+}
