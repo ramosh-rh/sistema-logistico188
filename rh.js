@@ -100,7 +100,7 @@ window.renderRHQuad = function () {
             <td style="text-align:center;"><span style="background:${stBg};color:${stColor};padding:4px 10px;border-radius:12px;font-weight:900;font-size:10px;">${stLbl}</span></td>
             <td style="text-align:center;white-space:nowrap;">
                 <button class="btn btn-blue" style="padding:4px 8px;font-size:11px;margin-right:3px;" onclick="abrirEdicaoRH(${index})"><i class="fas fa-edit"></i> Editar</button>
-                <button class="btn-del-colab" style="padding:4px 8px;font-size:11px;background:#c0392b;color:white;border:none;border-radius:4px;cursor:pointer;" onclick="excluirColaboradorRH(${index})"><i class="fas fa-trash-alt"></i> Excluir</button>
+                <button class="btn-del-colab" style="padding:4px 8px;font-size:11px;background:#c0392b;color:white;border:none;border-radius:4px;cursor:pointer;" onclick="excluirColaboradorRH('${mat}')"><i class="fas fa-trash-alt"></i> Excluir</button>
             </td>
         </tr>`;
     });
@@ -200,6 +200,186 @@ window.renderFerias = function () {
         tb.innerHTML+=`<tr><td style="font-weight:bold;font-size:12px;">${mat}</td><td style="text-align:left;font-size:12px;">${nome}</td><td style="font-size:11px;color:#555;">${adm}</td><td>${pAberto}</td><td>${limDisp}</td><td>${badge}</td><td><input type="date" value="${dtI}" onchange="updateRHData('${mat}','feriasInicio',this.value,this);window.renderRHQuad();window.renderFerias();" style="padding:4px;border:1px solid #ccc;border-radius:4px;font-size:10px;"></td><td><input type="date" value="${dtF}" onchange="updateRHData('${mat}','feriasFim',this.value,this);window.renderRHQuad();window.renderFerias();" style="padding:4px;border:1px solid #ccc;border-radius:4px;font-size:10px;"></td><td><label style="cursor:pointer;font-weight:800;color:var(--orange);font-size:10px;display:flex;align-items:center;gap:5px;justify-content:center;"><input type="checkbox" ${rh.vendeu10Dias?'checked':''} onchange="updateRHData('${mat}','vendeu10Dias',this.checked,this)"> Vendeu 10 Dias</label></td><td><button class="btn-sm" style="background:#25D366;color:white;padding:5px;border-radius:20px;" onclick="sendWhatsAppLink('${mat}','${nome}')"><i class="fab fa-whatsapp"></i></button></td></tr>`;
     });
 };
+// =========================================================================
+// RELATÓRIO DE FÉRIAS EM PDF (para impressão)
+// =========================================================================
+window.gerarRelatorioPDF = function () {
+    const lista = _getLista();
+    if (!lista.length) { alert('Nenhum colaborador para gerar relatório.'); return; }
+
+    const hoje   = new Date();
+    const dHoje  = hoje.toLocaleDateString('pt-BR');
+    const ano    = hoje.getFullYear();
+
+    // Monta linhas da tabela — apenas MARCADA e EM FÉRIAS
+    let linhas = '';
+    let seq = 1;
+    const hj = new Date(); hj.setHours(0,0,0,0);
+
+    lista.forEach(r => {
+        const mat  = r['Matrícula']||r['Matricula']||r['MATRICULA']||r['matricula']||'-';
+        const nome = r['Nome']||r['NOME']||r['nome']||'-';
+        const func = r['Função']||r['Funcao']||r['FUNÇÃO']||r['funcao']||'-';
+        const st   = (r['Status']||r['STATUS']||r['status']||'ATIVO').toUpperCase();
+        if (nome==='-' || st==='INATIVO') return;
+
+        ensureRhData(mat);
+        const rh = window.rhData[mat] || {};
+        const sm = rh.statusManual || 'AUTO';
+        if (sm === 'INATIVO' || sm === 'TRANSFERENCIA DE TURNO') return;
+
+        // ── Filtro: somente quem tem férias MARCADAS ou EM GOZO ──────────
+        // Exige que inicio E fim estejam preenchidos
+        if (!rh.feriasInicio || !rh.feriasFim) return;
+
+        const dI = new Date(rh.feriasInicio+'T00:00:00');
+        const dF = new Date(rh.feriasFim+'T00:00:00');
+
+        let stLabel;
+        if (hj >= dI && hj <= dF) {
+            stLabel = 'EM FÉRIAS';       // em gozo hoje
+        } else if (dI > hj) {
+            stLabel = 'MARCADA';         // marcada para o futuro
+        } else {
+            return; // já gozadas — não entra no relatório
+        }
+        // ─────────────────────────────────────────────────────────────────
+
+        const ini = formatDateBR(rh.feriasInicio);
+        const fim = formatDateBR(rh.feriasFim);
+        const lim = rh.limiteFerias ? formatDateBR(rh.limiteFerias) : '-';
+        const per = rh.periodoAberto || '-';
+        const v10 = rh.vendeu10Dias ? 'Sim' : 'Não';
+
+        // Cor da linha por status
+        const rowBg  = stLabel === 'EM FÉRIAS' ? '#e8f8f5' : (seq%2===0 ? '#f9f9f9' : '#ffffff');
+        const stColor= stLabel === 'EM FÉRIAS' ? '#0f6e56' : '#185FA5';
+
+        linhas += `<tr style="background:${rowBg};">
+            <td style="text-align:center;">${seq++}</td>
+            <td style="text-align:center;font-weight:bold;">${mat}</td>
+            <td>${nome}</td>
+            <td>${func}</td>
+            <td style="font-size:10px;">${per}</td>
+            <td style="text-align:center;">${lim}</td>
+            <td style="text-align:center;font-weight:bold;">${ini}</td>
+            <td style="text-align:center;font-weight:bold;">${fim}</td>
+            <td style="text-align:center;">${v10}</td>
+            <td style="text-align:center;font-size:10px;font-weight:bold;color:${stColor};">${stLabel}</td>
+        </tr>`;
+    });
+
+    if (!linhas) {
+        alert('Nenhuma férias marcada ou em andamento encontrada para gerar o relatório.\n\nImporte a escala de férias primeiro.');
+        return;
+    }
+
+    const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Relatório de Férias — ${ano}</title>
+<style>
+  @page { size: A4 landscape; margin: 15mm 12mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #222; background: #fff; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 10px; }
+  .header-left h1 { font-size: 16px; font-weight: bold; color: #1a237e; }
+  .header-left p  { font-size: 10px; color: #555; margin-top: 3px; }
+  .header-right   { text-align: right; font-size: 10px; color: #555; }
+  table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  th { background: #1a237e; color: #fff; padding: 6px 5px; text-align: center; font-size: 10px; font-weight: bold; border: 1px solid #1a237e; }
+  td { padding: 5px 4px; border: 1px solid #ddd; font-size: 10px; vertical-align: middle; }
+  tr:hover { background: #e8eaf6 !important; }
+  .footer { margin-top: 18px; border-top: 1px solid #ccc; padding-top: 10px; }
+  .footer-obs { font-size: 10px; color: #333; line-height: 1.6; }
+  .footer-obs .label { font-weight: bold; font-size: 10px; color: #c0392b; text-transform: uppercase; }
+  .footer-aviso { margin-top: 10px; background: #fff8e1; border: 1px solid #f9a825; border-radius: 4px; padding: 8px 12px; font-size: 10px; line-height: 1.6; }
+  .footer-aviso .label { font-weight: bold; color: #e65100; }
+  .assinaturas { margin-top: 30px; display: flex; gap: 40px; }
+  .assinatura-box { flex: 1; text-align: center; }
+  .assinatura-box .linha { border-top: 1px solid #333; margin-bottom: 4px; }
+  .assinatura-box p { font-size: 10px; color: #555; }
+  @media print {
+    .no-print { display: none; }
+    tr { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <h1>📋 Relatório de Escala de Férias — ${ano}</h1>
+    <p>Módulo Recursos Humanos · Gerado em: ${dHoje}</p>
+  </div>
+  <div class="header-right">
+    <strong>Data de emissão:</strong> ${dHoje}<br>
+    <strong>Exercício:</strong> ${ano}
+  </div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width:30px;">#</th>
+      <th style="width:70px;">Matrícula</th>
+      <th style="width:18%;">Nome</th>
+      <th style="width:14%;">Função</th>
+      <th style="width:16%;">Período Aquisitivo</th>
+      <th style="width:8%;">Limite</th>
+      <th style="width:8%;">Início Férias</th>
+      <th style="width:8%;">Fim Férias</th>
+      <th style="width:7%;">Vendeu 10d</th>
+      <th style="width:9%;">Situação</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${linhas || '<tr><td colspan="10" style="text-align:center;padding:12px;color:#999;">Nenhum colaborador ativo.</td></tr>'}
+  </tbody>
+</table>
+
+<div class="footer">
+  <div class="footer-obs">
+    <span class="label">⚠ Observação:</span>
+    As férias poderão sofrer alterações até a data limite.
+  </div>
+
+  <div class="footer-aviso">
+    <span class="label">📱 Aviso aos Colaboradores:</span><br>
+    Acompanhe suas férias pelo aplicativo <strong>Meu RH</strong>. No prazo de até <strong>40 dias antes do início das férias</strong>,
+    verifique se elas foram confirmadas no sistema. Caso não estejam marcadas, procure imediatamente
+    sua <strong>liderança</strong> para regularização.
+  </div>
+
+  <div class="assinaturas">
+    <div class="assinatura-box">
+      <div class="linha"></div>
+      <p>Responsável RH</p>
+    </div>
+    <div class="assinatura-box">
+      <div class="linha"></div>
+      <p>Gestor de Operações</p>
+    </div>
+    <div class="assinatura-box">
+      <div class="linha"></div>
+      <p>Diretoria</p>
+    </div>
+  </div>
+</div>
+
+<script>
+  window.onload = function() { window.print(); };
+<\/script>
+</body>
+</html>`;
+
+    const blob = new Blob([html], { type: 'text/html; charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    const win  = window.open(url, '_blank');
+    if (!win) alert('Permita pop-ups para gerar o relatório em PDF.');
+};
+
 window.updateRHData = async function(mat,field,val,inputEl){ensureRhData(mat);window.rhData[mat][field]=val;if(window.saveToDB)window.saveToDB('rhData',window.rhData);if(inputEl&&inputEl.type!=='checkbox'){inputEl.style.backgroundColor='#d4edda';setTimeout(()=>{inputEl.style.backgroundColor='';},1000);}};
 window.renderBanco = function(){const tb=document.getElementById('tbBanco');if(!tb)return;const lista=_getLista();if(!lista.length)return;tb.innerHTML='';let tot=0;lista.forEach(r=>{const mat=r['Matrícula']||r['Matricula']||r['MATRICULA']||r['matricula']||'-';const nome=r['Nome']||r['NOME']||r['nome']||'-';const st=(r['Status']||r['STATUS']||r['status']||'-').toUpperCase();if(nome==='-'||st==='INATIVO')return;ensureRhData(mat);const h=window.rhData[mat].banco||0;tot+=h;const c=h>0?'var(--green)':(h<0?'var(--red)':'#555');tb.innerHTML+=`<tr><td style="font-weight:bold;">${mat}</td><td>${nome}</td><td><strong style="color:${c};font-size:16px;">${formatDecimalToTime(h)}</strong></td></tr>`;});if(typeof safeUpdate==='function')safeUpdate('bh-global',formatDecimalToTime(tot));};
 
@@ -283,7 +463,7 @@ function _processarEscalaFerias(texto) {
 }
 
 // =========================================================================
-// FIX 3 — DASHBOARD RH (usa _setDRH local, não depende do patch do index)
+// FIX 3 — DASHBOARD RH com análise via API Claude (IA real)
 // =========================================================================
 window.renderDashboardRH = async function () {
     const btn=document.querySelector('[onclick*="renderDashboardRH"]');
@@ -322,25 +502,18 @@ window.renderDashboardRH = async function () {
         const turnover=inativos>0?((inativos/Math.max(1,ativos+inativos))*100).toFixed(1):'0.0';
         const pendRep=(typeof window.pendenciasRH!=='undefined')?window.pendenciasRH.length:0;
         _setDRH('drh-entradas',entradas);_setDRH('drh-saidas',inativos);_setDRH('drh-turnover',turnover+'%');_setDRH('drh-ativos',ativos);_setDRH('drh-reposicoes',pendRep);
-        let insC=`📊 <strong>${ativos} ativos</strong> | ${sups} sup | ${lids} líd | ${ops} op. `;
-        insC+=parseFloat(turnover)>15?`🚨 Turnover elevado (${turnover}%).`:parseFloat(turnover)>8?`⚡ Moderado (${turnover}%).`:`✅ Controlado (${turnover}%).`;
-        if(pendRep>0)insC+=` 🔴 <strong>${pendRep} vaga(s) em reposição.</strong>`;
-        _setDRH('ai-colab-insight',insC,true);
 
         // Férias
         let fAtv=0,fVenc=0,em30=0;
         lista.forEach(c=>{const mat=c['Matrícula']||c['Matricula']||c['MATRICULA']||c['matricula']||'';const r=rh[mat]||{};if(r.feriasInicio&&r.feriasFim){const fi=new Date(r.feriasInicio+'T00:00:00'),ff=new Date(r.feriasFim+'T00:00:00');if(hoje>=fi&&hoje<=ff)fAtv++;}if(r.limiteFerias){const lim=new Date(r.limiteFerias+'T00:00:00'),d=(lim-hoje)/86400000;if(d<0&&!r.feriasInicio)fVenc++;else if(d>=0&&d<=30&&!r.feriasInicio)em30++;}});
         let pendFer=0;try{if(typeof dbCloud!=='undefined'){const sn=await dbCloud.collection('logistica_ferias_inbox').where('status','==','PENDENTE').get();pendFer=sn.size;}}catch(e){}
         _setDRH('drh-ferias-ativas',fAtv);_setDRH('drh-ferias-vencidas',fVenc);_setDRH('drh-ferias-a-vencer',em30);_setDRH('drh-ferias-pendentes',pendFer);
-        let insFer='';if(fVenc>0)insFer+=`🚨 <strong>${fVenc} vencidas</strong> — risco legal. `;if(em30>0)insFer+=`⏰ ${em30} a vencer em 30 dias. `;if(fAtv>0)insFer+=`🌴 ${fAtv} em gozo. `;if(pendFer>0)insFer+=`📬 ${pendFer} pendente(s). `;if(!insFer)insFer='✅ Sem irregularidades.';
-        _setDRH('ai-ferias-insight',insFer,true);
 
         // Banco de Horas
         let totPos=0,totNeg=0,qtdPos=0,qtdNeg=0;
         Object.keys(rh).forEach(mat=>{const bh=typeof rh[mat].banco==='number'?rh[mat].banco:0;if(bh>0){totPos+=bh;qtdPos++;}else if(bh<0){totNeg+=Math.abs(bh);qtdNeg++;}});
         const fmtBH=h=>{const a=Math.abs(h);return(h<0?'-':'+')+String(Math.floor(a)).padStart(2,'0')+':'+String(Math.round((a-Math.floor(a))*60)).padStart(2,'0');};
         _setDRH('drh-bh-positivo',fmtBH(totPos));_setDRH('drh-bh-negativo',fmtBH(-totNeg));_setDRH('drh-bh-qtd-pos',qtdPos);_setDRH('drh-bh-qtd-neg',qtdNeg);
-        _setDRH('ai-bh-insight',(totPos>100?'⚠️ Saldo positivo elevado. ':qtdNeg>ativos*0.2?'🔴 +20% com saldo negativo. ':'')+'✅ OK',true);
 
         // Absenteísmo
         let totAbs=0,diasAbs=0,motCount={},pesCount={},absMeses={};
@@ -350,25 +523,87 @@ window.renderDashboardRH = async function () {
         _setDRH('drh-abs-total',totAbs);_setDRH('drh-abs-dias',diasAbs);_setDRH('drh-abs-motivo',topMot.length>22?topMot.slice(0,20)+'...':topMot);_setDRH('drh-abs-pessoa',topPes.length>22?topPes.slice(0,20)+'...':topPes);
         if(typeof renderChartAbsMotivo==='function')renderChartAbsMotivo(motCount);
         if(typeof renderChartAbsMensal2==='function')renderChartAbsMensal2(absMeses);
+
         const taxa=ativos>0?((diasAbs/(ativos*22))*100).toFixed(1):0;
-        _setDRH('ai-abs-insight',`📊 Taxa: <strong>${taxa}%</strong>. `+(parseFloat(taxa)>4?`🚨 Acima do limite. Motivo: <strong>${topMot}</strong>.`:parseFloat(taxa)>2?'⚠️ Moderada.':'✅ Ok.'),true);
 
         // Ponto
         let pTot=0,pFlt=0,pMrc=0,pOk=0,pontoTipos={};
         Object.keys(rh).forEach(mat=>{((rh[mat]||{}).ponto||[]).forEach(p=>{pTot++;const tp=(p.tipo||'').toLowerCase(),ac=(p.acao||'').toLowerCase();if(tp.includes('falta sem'))pFlt++;if(tp.includes('marcação')||tp.includes('marcacao'))pMrc++;if(ac.includes('justificado')||ac.includes('arquivado'))pOk++;pontoTipos[p.tipo||'Outro']=(pontoTipos[p.tipo||'Outro']||0)+1;});});
         _setDRH('drh-ponto-total',pTot);_setDRH('drh-ponto-faltas',pFlt);_setDRH('drh-ponto-marcacoes',pMrc);_setDRH('drh-ponto-ok',pOk);
         if(typeof renderChartPontoTipo==='function')renderChartPontoTipo(pontoTipos);
-        _setDRH('ai-ponto-insight',pTot>0?`🗓 <strong>${pTot} ocorrência(s)</strong>.`+(pFlt>5?` ⚠️ Faltas: ${pFlt}.`:''):'Nenhuma ocorrência.',true);
 
         // EPI
         let epiTot=0,epiEntg=0;
         try{if(typeof dbCloud!=='undefined'){const er=await dbCloud.collection('logistica_epi_registros').get();er.forEach(d=>{epiTot++;if(d.data().status==='entregue')epiEntg++;});}}catch(e){}
         _setDRH('drh-epi-total',epiTot||'—');_setDRH('drh-epi-entregues',epiEntg||'—');_setDRH('drh-epi-pendentes',epiTot?(epiTot-epiEntg):'—');
 
+        // ── Análise IA via API Claude ─────────────────────────────────────
+        _setDRH('ai-colab-insight','<i class="fas fa-circle-notch fa-spin"></i> Analisando com IA…',true);
+        _setDRH('ai-ferias-insight','<i class="fas fa-circle-notch fa-spin"></i> Analisando com IA…',true);
+        _setDRH('ai-bh-insight','<i class="fas fa-circle-notch fa-spin"></i> Analisando com IA…',true);
+        _setDRH('ai-abs-insight','<i class="fas fa-circle-notch fa-spin"></i> Analisando com IA…',true);
+        _setDRH('ai-ponto-insight','<i class="fas fa-circle-notch fa-spin"></i> Analisando com IA…',true);
+
+        try {
+            const dadosRH = {
+                colaboradores: { ativos, inativos, entradas, sups, lids, ops, turnover: parseFloat(turnover), pendentesReposicao: pendRep },
+                ferias: { emGozo: fAtv, vencidas: fVenc, aVencer30dias: em30, pendentes: pendFer },
+                bancoHoras: { totalPositivo: totPos.toFixed(1), totalNegativo: totNeg.toFixed(1), qtdPositivo: qtdPos, qtdNegativo: qtdNeg },
+                absenteismo: { totalOcorrencias: totAbs, totalDias: diasAbs, taxaPercent: parseFloat(taxa), principalMotivo: topMot, colaboradorMaisAusente: topPes },
+                ponto: { totalOcorrencias: pTot, faltasSemJust: pFlt, marcacoesErradas: pMrc, resolvidos: pOk }
+            };
+
+            const resp = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: 'claude-sonnet-4-20250514',
+                    max_tokens: 1000,
+                    messages: [{
+                        role: 'user',
+                        content: `Você é um analista de RH. Analise os dados abaixo e gere insights curtos e objetivos em português (máximo 2 frases por seção). Use emojis moderadamente. Seja direto e prático.
+
+Dados: ${JSON.stringify(dadosRH)}
+
+Responda SOMENTE em JSON com as chaves: colaboradores, ferias, bancoHoras, absenteismo, ponto.
+Cada valor deve ser HTML inline simples (sem tags block). Exemplo:
+{"colaboradores":"✅ Equipe estável com ${ativos} ativos. Turnover de ${turnover}% está dentro do esperado.", "ferias":"...", "bancoHoras":"...", "absenteismo":"...", "ponto":"..."}`
+                    }]
+                })
+            });
+
+            if (resp.ok) {
+                const data = await resp.json();
+                const txt  = (data.content||[]).map(b=>b.text||'').join('');
+                const clean = txt.replace(/```json|```/g,'').trim();
+                const insights = JSON.parse(clean);
+                _setDRH('ai-colab-insight', insights.colaboradores || '—', true);
+                _setDRH('ai-ferias-insight', insights.ferias || '—', true);
+                _setDRH('ai-bh-insight', insights.bancoHoras || '—', true);
+                _setDRH('ai-abs-insight', insights.absenteismo || '—', true);
+                _setDRH('ai-ponto-insight', insights.ponto || '—', true);
+            } else {
+                throw new Error('HTTP ' + resp.status);
+            }
+        } catch(iaErr) {
+            console.warn('[Dashboard RH] IA indisponível, usando análise local:', iaErr);
+            // Fallback: análise local sem IA
+            let insC=`📊 <strong>${ativos} ativos</strong> | ${sups} sup | ${lids} líd | ${ops} op. `;
+            insC+=parseFloat(turnover)>15?`🚨 Turnover elevado (${turnover}%).`:parseFloat(turnover)>8?`⚡ Moderado (${turnover}%).`:`✅ Controlado (${turnover}%).`;
+            if(pendRep>0)insC+=` 🔴 <strong>${pendRep} vaga(s) em reposição.</strong>`;
+            _setDRH('ai-colab-insight',insC,true);
+
+            let insFer='';if(fVenc>0)insFer+=`🚨 <strong>${fVenc} vencidas</strong> — risco legal. `;if(em30>0)insFer+=`⏰ ${em30} a vencer em 30 dias. `;if(fAtv>0)insFer+=`🌴 ${fAtv} em gozo. `;if(pendFer>0)insFer+=`📬 ${pendFer} pendente(s). `;if(!insFer)insFer='✅ Sem irregularidades.';
+            _setDRH('ai-ferias-insight',insFer,true);
+
+            _setDRH('ai-bh-insight',(totPos>100?'⚠️ Saldo positivo elevado. ':qtdNeg>ativos*0.2?'🔴 +20% com saldo negativo. ':'')+'✅ OK',true);
+            _setDRH('ai-abs-insight',`📊 Taxa: <strong>${taxa}%</strong>. `+(parseFloat(taxa)>4?`🚨 Acima do limite. Motivo: <strong>${topMot}</strong>.`:parseFloat(taxa)>2?'⚠️ Moderada.':'✅ Ok.'),true);
+            _setDRH('ai-ponto-insight',pTot>0?`🗓 <strong>${pTot} ocorrência(s)</strong>.`+(pFlt>5?` ⚠️ Faltas: ${pFlt}.`:''):'Nenhuma ocorrência.',true);
+        }
+
     }catch(e){console.error('Dashboard RH:',e);_setDRH('ai-colab-insight','❌ Erro ao carregar: '+e.message,true);}
     finally{if(btn){btn.disabled=false;btn.innerHTML='<i class="fas fa-sync-alt"></i> Atualizar Painel';}}
 };
-
 // ── Inicialização (carrega dados na abertura do app) ──────────────────────
 document.addEventListener('DOMContentLoaded', function () {
     setTimeout(async () => {
@@ -395,14 +630,27 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 // =========================================================================
-// EXCLUIR COLABORADOR — versão definitiva (salva no Firebase + localStorage)
+// EXCLUIR COLABORADOR — busca por matrícula (evita índice stale após re-render)
 // =========================================================================
-window.excluirColaboradorRH = async function (index) {
+window.excluirColaboradorRH = async function (indexOuMat) {
     const lista = _getLista();
-    if (!lista || index < 0 || index >= lista.length) {
-        alert('Colaborador não encontrado.'); return;
+    if (!lista || !lista.length) { alert('Colaborador não encontrado.'); return; }
+
+    // Aceita tanto índice numérico quanto string de matrícula
+    let colab, realIndex;
+    if (typeof indexOuMat === 'string') {
+        realIndex = lista.findIndex(c =>
+            (c['Matrícula']||c['Matricula']||c['MATRICULA']||c['matricula']||'') === indexOuMat);
+    } else {
+        // Re-valida pelo índice atual da lista em memória
+        realIndex = indexOuMat;
     }
-    const colab   = lista[index];
+
+    if (realIndex < 0 || realIndex >= lista.length) {
+        alert('Colaborador não encontrado. Recarregue a página e tente novamente.'); return;
+    }
+    colab = lista[realIndex];
+
     const mat     = colab['Matrícula']||colab['Matricula']||colab['MATRICULA']||colab['matricula']||'';
     const nome    = colab['Nome']||colab['NOME']||colab['nome']||mat;
     const funcao  = colab['Função']||colab['Funcao']||colab['FUNÇÃO']||colab['funcao']||'';
@@ -414,8 +662,8 @@ window.excluirColaboradorRH = async function (index) {
 
     const motivoTexto = ({'1':'Demissão','2':'Transferência','3':'Outro'})[motivo] || 'Não informado';
 
-    // Remove da lista em memória
-    lista.splice(index, 1);
+    // Remove da lista em memória (usa realIndex para garantir remoção correta)
+    lista.splice(realIndex, 1);
     window.dRH = lista;
 
     // Remove dados de rhData

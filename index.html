@@ -775,6 +775,7 @@
                         </div>
                         <button class="btn btn-purple" onclick="copyGenericFormLink()"><i class="fab fa-whatsapp"></i> LINK P/ WHATSAPP</button>
                         <button class="btn btn-blue" onclick="window.open(window.location.href.split('?')[0] + '?mode=formferias', '_blank')"><i class="fas fa-external-link-alt"></i> TESTAR FORMULÁRIO</button>
+                        <button class="btn btn-red" onclick="window.gerarRelatorioPDF()"><i class="fas fa-file-pdf"></i> GERAR PDF FÉRIAS</button>
                         <input type="file" id="f_ferias_novo" accept=".pdf" onchange="window.importarFeriasPDF(event)" style="display:none;">
 <button onclick="document.getElementById('f_ferias_novo').click()" class="btn btn-teal">
     <i class="fas fa-file-pdf"></i> Importar PDF Férias
@@ -962,6 +963,109 @@
             </div>
         </div>
         
+<!-- ================================================================
+     DASHBOARD RH
+================================================================ -->
+<div id="view-rh-dashboard" class="view-section">
+    <div class="scroll-content">
+
+        <!-- Cabeçalho -->
+        <div class="card" style="border-left:5px solid #1a237e; background:linear-gradient(135deg,#f0f4ff,#fff); margin-bottom:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                <div>
+                    <h3 style="margin:0; color:#1a237e;"><i class="fas fa-chart-line"></i> Dashboard de Recursos Humanos — <span id="drh-ano-label"></span></h3>
+                    <p style="font-size:12px; color:#666; margin:4px 0 0;">Indicadores consolidados com análise de IA. Clique em Atualizar para carregar.</p>
+                </div>
+                <button class="btn" style="background:#1a237e; color:white; font-weight:700;" onclick="renderDashboardRH()">
+                    <i class="fas fa-sync-alt"></i> Atualizar Painel
+                </button>
+            </div>
+        </div>
+
+        <!-- ── BLOCO 1: Colaboradores ── -->
+        <div class="card" style="border-left:5px solid #e67e22; margin-bottom:14px;">
+            <h4 style="margin:0 0 12px; color:#e67e22;"><i class="fas fa-users"></i> Colaboradores</h4>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; margin-bottom:12px;">
+                <div class="kpi-card k-orange"><div><div class="kpi-lbl">Ativos</div><div class="kpi-val" id="drh-ativos">—</div></div></div>
+                <div class="kpi-card k-red"><div><div class="kpi-lbl">Saídas</div><div class="kpi-val" id="drh-saidas">—</div></div></div>
+                <div class="kpi-card k-green"><div><div class="kpi-lbl">Entradas</div><div class="kpi-val" id="drh-entradas">—</div></div></div>
+                <div class="kpi-card k-blue"><div><div class="kpi-lbl">Turnover</div><div class="kpi-val" id="drh-turnover">—</div></div></div>
+                <div class="kpi-card" style="border-top:3px solid #c0392b;"><div><div class="kpi-lbl">Reposições</div><div class="kpi-val" id="drh-reposicoes" style="color:#c0392b;">—</div></div></div>
+            </div>
+            <div id="ai-colab-insight" style="background:#fff8e1; border-left:3px solid #f9a825; padding:8px 12px; border-radius:4px; font-size:11px; color:#555; min-height:28px;">
+                <em>Clique em Atualizar para carregar análise IA.</em>
+            </div>
+        </div>
+
+        <!-- ── BLOCO 2: Férias ── -->
+        <div class="card" style="border-left:5px solid #16a085; margin-bottom:14px;">
+            <h4 style="margin:0 0 12px; color:#16a085;"><i class="fas fa-umbrella-beach"></i> Férias</h4>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; margin-bottom:12px;">
+                <div class="kpi-card" style="border-top:3px solid #8e44ad;"><div><div class="kpi-lbl">Em Gozo</div><div class="kpi-val" id="drh-ferias-ativas" style="color:#8e44ad;">—</div></div></div>
+                <div class="kpi-card k-red"><div><div class="kpi-lbl">Vencidas</div><div class="kpi-val" id="drh-ferias-vencidas">—</div></div></div>
+                <div class="kpi-card k-orange"><div><div class="kpi-lbl">Vencem em 30d</div><div class="kpi-val" id="drh-ferias-a-vencer">—</div></div></div>
+                <div class="kpi-card k-blue"><div><div class="kpi-lbl">Pendentes</div><div class="kpi-val" id="drh-ferias-pendentes">—</div></div></div>
+            </div>
+            <div id="ai-ferias-insight" style="background:#e8f8f5; border-left:3px solid #16a085; padding:8px 12px; border-radius:4px; font-size:11px; color:#555; min-height:28px;">
+                <em>Clique em Atualizar para carregar análise IA.</em>
+            </div>
+        </div>
+
+        <!-- ── BLOCO 3: Banco de Horas ── -->
+        <div class="card" style="border-left:5px solid #2980b9; margin-bottom:14px;">
+            <h4 style="margin:0 0 12px; color:#2980b9;"><i class="fas fa-clock"></i> Banco de Horas</h4>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:12px;">
+                <div class="kpi-card k-green"><div><div class="kpi-lbl">Saldo Positivo</div><div class="kpi-val" id="drh-bh-positivo">—</div></div></div>
+                <div class="kpi-card k-red"><div><div class="kpi-lbl">Saldo Negativo</div><div class="kpi-val" id="drh-bh-negativo">—</div></div></div>
+                <div class="kpi-card k-blue"><div><div class="kpi-lbl">Qtd c/ Saldo +</div><div class="kpi-val" id="drh-bh-qtd-pos">—</div></div></div>
+                <div class="kpi-card k-orange"><div><div class="kpi-lbl">Qtd c/ Saldo –</div><div class="kpi-val" id="drh-bh-qtd-neg">—</div></div></div>
+            </div>
+            <div id="ai-bh-insight" style="background:#eaf4fb; border-left:3px solid #2980b9; padding:8px 12px; border-radius:4px; font-size:11px; color:#555; min-height:28px;">
+                <em>Clique em Atualizar para carregar análise IA.</em>
+            </div>
+        </div>
+
+        <!-- ── BLOCO 4: Absenteísmo ── -->
+        <div class="card" style="border-left:5px solid var(--red); margin-bottom:14px;">
+            <h4 style="margin:0 0 12px; color:var(--red);"><i class="fas fa-user-injured"></i> Absenteísmo</h4>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:12px;">
+                <div class="kpi-card k-red"><div><div class="kpi-lbl">Ocorrências</div><div class="kpi-val" id="drh-abs-total">—</div></div></div>
+                <div class="kpi-card k-orange"><div><div class="kpi-lbl">Dias Perdidos</div><div class="kpi-val" id="drh-abs-dias">—</div></div></div>
+                <div class="kpi-card" style="border-top:3px solid #555;"><div><div class="kpi-lbl">Principal Motivo</div><div class="kpi-val" style="font-size:13px;" id="drh-abs-motivo">—</div></div></div>
+                <div class="kpi-card" style="border-top:3px solid #8e44ad;"><div><div class="kpi-lbl">Mais Ausente</div><div class="kpi-val" style="font-size:13px;" id="drh-abs-pessoa">—</div></div></div>
+            </div>
+            <div id="ai-abs-insight" style="background:#fdf2f2; border-left:3px solid var(--red); padding:8px 12px; border-radius:4px; font-size:11px; color:#555; min-height:28px;">
+                <em>Clique em Atualizar para carregar análise IA.</em>
+            </div>
+        </div>
+
+        <!-- ── BLOCO 5: Ponto ── -->
+        <div class="card" style="border-left:5px solid var(--purple); margin-bottom:14px;">
+            <h4 style="margin:0 0 12px; color:var(--purple);"><i class="fas fa-user-clock"></i> Ocorrências de Ponto</h4>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; margin-bottom:12px;">
+                <div class="kpi-card k-blue"><div><div class="kpi-lbl">Total</div><div class="kpi-val" id="drh-ponto-total">—</div></div></div>
+                <div class="kpi-card k-red"><div><div class="kpi-lbl">Faltas s/ Just.</div><div class="kpi-val" id="drh-ponto-faltas">—</div></div></div>
+                <div class="kpi-card k-orange"><div><div class="kpi-lbl">Marcações</div><div class="kpi-val" id="drh-ponto-marcacoes">—</div></div></div>
+                <div class="kpi-card k-green"><div><div class="kpi-lbl">Resolvidas</div><div class="kpi-val" id="drh-ponto-ok">—</div></div></div>
+            </div>
+            <div id="ai-ponto-insight" style="background:#f5eeff; border-left:3px solid var(--purple); padding:8px 12px; border-radius:4px; font-size:11px; color:#555; min-height:28px;">
+                <em>Clique em Atualizar para carregar análise IA.</em>
+            </div>
+        </div>
+
+        <!-- ── BLOCO 6: EPI ── -->
+        <div class="card" style="border-left:5px solid #8e44ad; margin-bottom:14px;">
+            <h4 style="margin:0 0 10px; color:#8e44ad;"><i class="fas fa-vest"></i> EPI / Uniforme</h4>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px;">
+                <div class="kpi-card k-blue"><div><div class="kpi-lbl">Total Registros</div><div class="kpi-val" id="drh-epi-total">—</div></div></div>
+                <div class="kpi-card k-green"><div><div class="kpi-lbl">Entregues</div><div class="kpi-val" id="drh-epi-entregues">—</div></div></div>
+                <div class="kpi-card k-red"><div><div class="kpi-lbl">Pendentes</div><div class="kpi-val" id="drh-epi-pendentes">—</div></div></div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
 <!-- ================================================================
      MODAIS (inalterados + novos)
 ================================================================ -->
@@ -1235,7 +1339,7 @@ window.renderTbRH = function(lista) {
             '<td style="text-align:center;">' + statusPill + '</td>' +
             '<td style="text-align:center; white-space:nowrap;">' +
                 '<button onclick="editarColaboradorRH(' + i + ')" style="background:var(--blue); color:white; border:none; border-radius:4px; padding:4px 8px; font-size:10px; font-weight:700; cursor:pointer; margin-right:4px;"><i class="fas fa-edit"></i> Editar</button>' +
-                '<button class="btn-del-colab" onclick="excluirColaboradorRH(' + i + ')"><i class="fas fa-trash"></i> Excluir</button>' +
+                '<button class="btn-del-colab" onclick="excluirColaboradorRH(\'' + (c['Matrícula']||c['Matricula']||c['MATRICULA']||c.matricula||c.MATRICULA||'') + '\')"><i class="fas fa-trash"></i> Excluir</button>' +
             '</td></tr>';
     }).join('');
     updateRHKPIs(lista);
@@ -1278,30 +1382,8 @@ function updateRHKPIs(lista) {
     if (kpis && (lista||[]).length > 0) kpis.style.display = 'grid';
 }
 
-// Excluir colaborador
-window.excluirColaboradorRH = function(idx) {
-    if (!confirm('Tem certeza que deseja remover este colaborador? Esta ação registrará pendência de reposição.')) return;
-
-    var lista = getRHList();
-    if (!lista || idx < 0 || idx >= lista.length) return;
-    var colab = lista[idx];
-
-    // Pergunta motivo
-    var motivo = prompt('Motivo da saída:\n1 = Demissão\n2 = Transferência\n3 = Outro\n\nDigite o número:', '1');
-    var motivoMap = { '1': 'Demissão', '2': 'Transferência', '3': 'Outro' };
-    var motivoTexto = motivoMap[motivo] || 'Não informado';
-
-    lista.splice(idx, 1);
-    saveRHList(lista);
-    renderTbRH(lista);
-
-    // Registra pendência de reposição se for demissão ou transferência
-    if (motivo === '1' || motivo === '2') {
-        registrarPendenciaReposicao(colab, motivoTexto);
-    }
-
-    showToast('Colaborador removido. ' + (motivo === '1' || motivo === '2' ? 'Pendência de reposição criada.' : ''), 'warn');
-};
+// Excluir colaborador — delegado ao rh.js (window.excluirColaboradorRH definitivo)
+// Não redefinir aqui para não sobrescrever a versão correta do rh.js
 
 function registrarPendenciaReposicao(colab, motivo) {
     var reposicoes = JSON.parse(localStorage.getItem('pendencias_reposicao') || '[]');
