@@ -2526,11 +2526,9 @@ window.giroImportarAlocacao = function(input) {
             const sheetName = workbook.SheetNames[0];
             const json = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
             
-            // Processa os dados com as regras
             const resultado = json.map(item => {
                 const pck = String(item["Picking"] || "");
                 const res = String(item["Reserva"] || "");
-                
                 return {
                     produto: item["Produto"] || "N/D",
                     descricao: item["Descricao"] || "N/D",
@@ -2541,14 +2539,19 @@ window.giroImportarAlocacao = function(input) {
                 };
             });
 
-            // Manda para a tabela
-            if (typeof window.renderizarTabelaGiro === 'function') {
-                window.renderizarTabelaGiro(resultado);
+            // 🔥 1. FORÇA A CAIXA DE NÚMEROS A FICAR VISÍVEL E ATUALIZA 🔥
+            if (document.getElementById('gk-total')) {
+                const caixaKpis = document.getElementById('giro-kpis');
+                if (caixaKpis) caixaKpis.style.display = 'flex'; // Tira o display:none
+                
+                document.getElementById('gk-total').innerText = resultado.length.toLocaleString('pt-BR');
             }
             
-            // 🔥 FORÇA O NÚMERO A APARECER NA TELA 🔥
-            if (document.getElementById('gk-total')) {
-                document.getElementById('gk-total').innerText = resultado.length.toLocaleString('pt-BR');
+            // 🔥 2. ENVIA APENAS 300 LINHAS PARA A TABELA (EVITA TELA BRANCA) 🔥
+            if (typeof window.renderizarTabelaGiro === 'function') {
+                console.log("Desenhando a tabela na tela...");
+                // slice(0, 300) pega só os primeiros para a tela não congelar com 81 mil
+                window.renderizarTabelaGiro(resultado.slice(0, 300)); 
             }
             
             console.log("Sucesso! Total processado:", resultado.length);
@@ -2558,6 +2561,7 @@ window.giroImportarAlocacao = function(input) {
         }
     };
     reader.readAsArrayBuffer(file);
+};
 };
 // 2. Regra de Estações (Ruas 21 a 36)
 function definirEstacaoPavuna(endereco) {
