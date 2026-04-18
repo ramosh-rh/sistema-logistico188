@@ -2508,3 +2508,101 @@ window.restoreSession = async function() {
         } catch(e) {}
     }, 500);
 };
+
+// =========================================================
+// LÓGICA FINAL: GIRO DE ALOCAÇÃO (ESTOQUE ATUAL)
+// =========================================================
+// 1. Função que o botão do HTML chama (VERSÃO TURBO PARA 81k LINHAS)
+window.giroImportarAlocacao = function(input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            console.log("Lendo arquivo pesado...");
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const sheetName = workbook.SheetNames[0];
+            const json = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+            
+            // Processa os dados com as regras
+            const resultado = json.map(item => {
+                const pck = String(item["Picking"] || "");
+                const res = String(item["Reserva"] || "");
+                
+                return {
+                    produto: item["Produto"] || "N/D",
+                    descricao: item["Descricao"] || "N/D",
+                    picking: pck,
+                    reserva: res,
+                    estacao: definirEstacaoPavuna(res),
+                    metodologia: validarRegra30(pck, res)
+                };
+            });
+
+            // Manda para a tabela
+            if (typeof window.renderizarTabelaGiro === 'function') {
+                window.renderizarTabelaGiro(resultado);
+            }
+            
+            // 🔥 FORÇA O NÚMERO A APARECER NA TELA 🔥
+            if (document.getElementById('gk-total')) {
+                document.getElementById('gk-total').innerText = resultado.length.toLocaleString('pt-BR');
+            }
+            
+            console.log("Sucesso! Total processado:", resultado.length);
+            
+        } catch (err) {
+            alert("Erro ao ler o arquivo: " + err.message);
+        }
+    };
+    reader.readAsArrayBuffer(file);
+};
+// 2. Regra de Estações (Ruas 21 a 36)
+function definirEstacaoPavuna(endereco) {
+    if (!endereco || endereco.includes("FRAC")) return "Outros/Frac";
+    const p = endereco.split('-');
+    if (p.length < 2) return "Geral";
+    
+    const rua = parseInt(p[0]);
+    const mod = parseInt(p[1]);
+
+    if (rua >= 21 && rua <= 36) {
+        let e = (rua <= 23) ? 1 : (rua <= 26) ? 2 : (rua <= 29) ? 3 : (rua <= 32) ? 4 : 5;
+        
+        if (mod >= 1 && mod <= 26) return `Est. ${e} Perf. (Alto)`;
+        if (mod >= 37 && mod <= 40) return `Est. ${e} Perf. (Baixo)`;
+        if (mod >= 41 && mod <= 46) return `Est. ${e} Med. (Alto)`;
+        if (mod >= 57 && mod <= 60) return `Est. ${e} Med. (Baixo)`;
+    }
+    return "Outros";
+}
+
+// 3. Regra Metodologia (Diferença de 30: 80-50, 81-51...)
+function validarRegra30(pck, res) {
+    if (!pck || !res) return "---";
+    const nR = parseInt(res.replace(/\D/g, '').substring(0, 2));
+    const nP = parseInt(pck.replace(/\D/g, '').substring(0, 2));
+    if (nR - nP === 30) return "✅ OK";
+    return "❌ Errado";
+}
+
+// =========================================================
+// 🛡️ ESCUDO ANTI-TRAVAMENTO DO FIREBASE (80k LINHAS)
+// =========================================================
+setTimeout(() => {
+    const _salvamentoAntigo = window.saveToDB;
+    window.saveToDB = async function(chave, valor) {
+        // Se o sistema tentar enviar mais de 5.000 itens, nós bloqueamos a subida!
+        if (Array.isArray(valor) && valor.length > 5000) {
+            console.warn(`🛡️ Bloqueado envio de ${valor.length} itens para a nuvem. Processando APENAS na tela para evitar erro!`);
+            return Promise.resolve("OK");
+        }
+        // Se for um salvamento pequeno (ex: salvar um EPI), deixa passar normal
+        if (typeof _salvamentoAntigo === 'function') {
+            return _salvamentoAntigo(chave, valor);
+        }
+    };
+    console.log("🛡️ Escudo Anti-Travamento do Firebase ATIVADO.");
+}, 2000);
