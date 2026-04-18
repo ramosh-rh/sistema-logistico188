@@ -2510,9 +2510,8 @@ window.restoreSession = async function() {
 };
 
 // =========================================================
-// LÓGICA FINAL: GIRO DE ALOCAÇÃO (ESTOQUE ATUAL)
+// LÓGICA FINAL: GIRO DE ALOCAÇÃO (ESTOQUE ATUAL) - TURBO
 // =========================================================
-// 1. Função que o botão do HTML chama (VERSÃO TURBO PARA 81k LINHAS)
 window.giroImportarAlocacao = function(input) {
     const file = input.files[0];
     if (!file) return;
@@ -2542,15 +2541,12 @@ window.giroImportarAlocacao = function(input) {
             // 🔥 1. FORÇA A CAIXA DE NÚMEROS A FICAR VISÍVEL E ATUALIZA 🔥
             if (document.getElementById('gk-total')) {
                 const caixaKpis = document.getElementById('giro-kpis');
-                if (caixaKpis) caixaKpis.style.display = 'flex'; // Tira o display:none
-                
+                if (caixaKpis) caixaKpis.style.display = 'flex';
                 document.getElementById('gk-total').innerText = resultado.length.toLocaleString('pt-BR');
             }
             
             // 🔥 2. ENVIA APENAS 300 LINHAS PARA A TABELA (EVITA TELA BRANCA) 🔥
             if (typeof window.renderizarTabelaGiro === 'function') {
-                console.log("Desenhando a tabela na tela...");
-                // slice(0, 300) pega só os primeiros para a tela não congelar com 81 mil
                 window.renderizarTabelaGiro(resultado.slice(0, 300)); 
             }
             
@@ -2562,19 +2558,17 @@ window.giroImportarAlocacao = function(input) {
     };
     reader.readAsArrayBuffer(file);
 };
-};
+
 // 2. Regra de Estações (Ruas 21 a 36)
 function definirEstacaoPavuna(endereco) {
     if (!endereco || endereco.includes("FRAC")) return "Outros/Frac";
     const p = endereco.split('-');
     if (p.length < 2) return "Geral";
-    
     const rua = parseInt(p[0]);
     const mod = parseInt(p[1]);
-
+    
     if (rua >= 21 && rua <= 36) {
         let e = (rua <= 23) ? 1 : (rua <= 26) ? 2 : (rua <= 29) ? 3 : (rua <= 32) ? 4 : 5;
-        
         if (mod >= 1 && mod <= 26) return `Est. ${e} Perf. (Alto)`;
         if (mod >= 37 && mod <= 40) return `Est. ${e} Perf. (Baixo)`;
         if (mod >= 41 && mod <= 46) return `Est. ${e} Med. (Alto)`;
@@ -2598,12 +2592,10 @@ function validarRegra30(pck, res) {
 setTimeout(() => {
     const _salvamentoAntigo = window.saveToDB;
     window.saveToDB = async function(chave, valor) {
-        // Se o sistema tentar enviar mais de 5.000 itens, nós bloqueamos a subida!
         if (Array.isArray(valor) && valor.length > 5000) {
             console.warn(`🛡️ Bloqueado envio de ${valor.length} itens para a nuvem. Processando APENAS na tela para evitar erro!`);
             return Promise.resolve("OK");
         }
-        // Se for um salvamento pequeno (ex: salvar um EPI), deixa passar normal
         if (typeof _salvamentoAntigo === 'function') {
             return _salvamentoAntigo(chave, valor);
         }
