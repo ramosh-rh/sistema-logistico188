@@ -2512,6 +2512,10 @@ window.restoreSession = async function() {
 // =========================================================
 // LÓGICA FINAL: GIRO DE ALOCAÇÃO (ESTOQUE ATUAL) - TURBO
 // =========================================================
+// =========================================================
+// LÓGICA FINAL + APONTAMENTOS (KPIs DINÂMICOS)
+// =========================================================
+
 window.giroImportarAlocacao = function(input) {
     const file = input.files[0];
     if (!file) return;
@@ -2519,7 +2523,7 @@ window.giroImportarAlocacao = function(input) {
     const reader = new FileReader();
     reader.onload = function(e) {
         try {
-            console.log("Lendo arquivo pesado...");
+            console.log("Processando Estoque Atual...");
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
             const sheetName = workbook.SheetNames[0];
@@ -2538,19 +2542,44 @@ window.giroImportarAlocacao = function(input) {
                 };
             });
 
-            // 🔥 1. FORÇA A CAIXA DE NÚMEROS A FICAR VISÍVEL E ATUALIZA 🔥
-            if (document.getElementById('gk-total')) {
-                const caixaKpis = document.getElementById('giro-kpis');
-                if (caixaKpis) caixaKpis.style.display = 'flex';
-                document.getElementById('gk-total').innerText = resultado.length.toLocaleString('pt-BR');
+            // 🔥 1. CRIA OS APONTAMENTOS (KPIs) NA TELA 🔥
+            const caixaKpis = document.getElementById('giro-kpis');
+            if (caixaKpis) {
+                caixaKpis.style.display = 'flex';
+                
+                let oks = resultado.filter(r => r.metodologia.includes('✅')).length;
+                let errados = resultado.filter(r => r.metodologia.includes('❌')).length;
+                let faltantes = resultado.filter(r => r.metodologia.includes('⚠️')).length;
+
+                // Sobrescreve os quadros antigos pelos novos indicadores
+                caixaKpis.innerHTML = `
+                    <div class="giro-kpi" style="border-left-color:#2980b9;">
+                        <div class="giro-kpi-lbl">Total de Linhas</div>
+                        <div class="giro-kpi-val">${resultado.length.toLocaleString('pt-BR')}</div>
+                        <div class="giro-kpi-sub">Estoque Atual</div>
+                    </div>
+                    <div class="giro-kpi" style="border-left-color:#27ae60;">
+                        <div class="giro-kpi-lbl">Corretos (80x50)</div>
+                        <div class="giro-kpi-val" style="color:#27ae60;">${oks.toLocaleString('pt-BR')}</div>
+                        <div class="giro-kpi-sub">Metodologia OK</div>
+                    </div>
+                    <div class="giro-kpi" style="border-left-color:#c0392b;">
+                        <div class="giro-kpi-lbl">Divergentes</div>
+                        <div class="giro-kpi-val" style="color:#c0392b;">${errados.toLocaleString('pt-BR')}</div>
+                        <div class="giro-kpi-sub">Verificar Endereços</div>
+                    </div>
+                    <div class="giro-kpi" style="border-left-color:#f39c12;">
+                        <div class="giro-kpi-lbl">S/ Endereço</div>
+                        <div class="giro-kpi-val" style="color:#f39c12;">${faltantes.toLocaleString('pt-BR')}</div>
+                        <div class="giro-kpi-sub">Falta Picking/Reserva</div>
+                    </div>
+                `;
             }
             
-            // 🔥 2. ENVIA APENAS 300 LINHAS PARA A TABELA (EVITA TELA BRANCA) 🔥
+            // 🔥 2. ENVIA OS PRIMEIROS 300 PARA A TABELA (EVITA TELA BRANCA) 🔥
             if (typeof window.renderizarTabelaGiro === 'function') {
                 window.renderizarTabelaGiro(resultado.slice(0, 300)); 
             }
-            
-            console.log("Sucesso! Total processado:", resultado.length);
             
         } catch (err) {
             alert("Erro ao ler o arquivo: " + err.message);
@@ -2561,14 +2590,16 @@ window.giroImportarAlocacao = function(input) {
 
 // 2. Regra de Estações (Ruas 21 a 36)
 function definirEstacaoPavuna(endereco) {
-    if (!endereco || endereco.includes("FRAC")) return "Outros/Frac";
+    if (!endereco || !endereco.trim() || endereco.includes("FRAC")) return "Outros/Frac";
     const p = endereco.split('-');
     if (p.length < 2) return "Geral";
+    
     const rua = parseInt(p[0]);
     const mod = parseInt(p[1]);
-    
+
     if (rua >= 21 && rua <= 36) {
         let e = (rua <= 23) ? 1 : (rua <= 26) ? 2 : (rua <= 29) ? 3 : (rua <= 32) ? 4 : 5;
+        
         if (mod >= 1 && mod <= 26) return `Est. ${e} Perf. (Alto)`;
         if (mod >= 37 && mod <= 40) return `Est. ${e} Perf. (Baixo)`;
         if (mod >= 41 && mod <= 46) return `Est. ${e} Med. (Alto)`;
@@ -2579,11 +2610,24 @@ function definirEstacaoPavuna(endereco) {
 
 // 3. Regra Metodologia (Diferença de 30: 80-50, 81-51...)
 function validarRegra30(pck, res) {
-    if (!pck || !res) return "---";
+    if (!pck || !pck.trim() || !res || !res.trim()) return "⚠️ Faltando Endereço";
+    
     const nR = parseInt(res.replace(/\D/g, '').substring(0, 2));
     const nP = parseInt(pck.replace(/\D/g, '').substring(0, 2));
-    if (nR - nP === 30) return "✅ OK";
-    return "❌ Errado";
+    
+    if (isNaN(nR) || isNaN(nP)) return "---";
+
+    // Regra do "menos 30" (Apenas para Ruas 80 a 91: Volumoso, Controlado, Dermo)
+    if (nR >= 80 && nR <= 91) {
+        return (nR - nP === 30) ? "✅ OK" : "❌ Divergente";
+    }
+    
+    // Para Perfumaria e Medicamento (Ruas 21 a 36) - Apenas Estação importa
+    if (nR >= 21 && nR <= 36) {
+        return "📦 Validado por Estação";
+    }
+
+    return "---";
 }
 
 // =========================================================
