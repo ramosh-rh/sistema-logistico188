@@ -2520,6 +2520,10 @@ window.restoreSession = async function() {
 // 🚀 IMPLEMENTAÇÃO FINAL: GIRO DE ALOCAÇÃO (ESTOQUE ATUAL)
 // =========================================================
 
+// =========================================================
+// 🚀 DIAGNÓSTICO AVANÇADO: GIRO DE ALOCAÇÃO (CRUZAMENTO 100%)
+// =========================================================
+
 window.giroImportarAlocacao = function(input) {
     const file = input.files[0];
     if (!file) return;
@@ -2527,63 +2531,47 @@ window.giroImportarAlocacao = function(input) {
     const reader = new FileReader();
     reader.onload = function(e) {
         try {
-            console.log("Processando Estoque Atual...");
+            console.log("Iniciando Diagnóstico de Giro...");
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
             const sheetName = workbook.SheetNames[0];
             const json = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
 
-            const resultado = json.map(item => {
-                const pck = String(item["Picking"] || "").trim().toUpperCase();
-                const res = String(item["Reserva"] || "").trim().toUpperCase();
-                return {
+            let relatorio = [];
+            let estatisticasPorRua = {};
+
+            json.forEach(item => {
+                const pckStr = String(item["Picking"] || "").trim().toUpperCase();
+                const resStr = String(item["Reserva"] || "").trim().toUpperCase();
+                
+                // Avalia o produto com base na regra de cruzamento
+                const avaliacao = avaliarCruzamento(pckStr, resStr);
+                
+                const linhaResult = {
                     produto: item["Produto"] || "N/D",
                     descricao: item["Descricao"] || "N/D",
-                    picking: pck,
-                    reserva: res,
-                    estacao: definirEstacaoPavuna(res),
-                    metodologia: validarRegra30(pck, res)
+                    picking: pckStr,
+                    reserva: resStr,
+                    ruaReserva: avaliacao.ruaRes,
+                    moduloReserva: avaliacao.modRes,
+                    estacao: avaliacao.estacao,
+                    tipoEsperado: avaliacao.tipoExp,
+                    tipoReal: avaliacao.tipoReal,
+                    status: avaliacao.status,
+                    motivo: avaliacao.motivo
                 };
+                relatorio.push(linhaResult);
+
+                // Agrupamento de Estatísticas por Rua
+                let r = avaliacao.ruaRes;
+                if (r && r !== "N/A") {
+                    if (!estatisticasPorRua[r]) estatisticasPorRua[r] = { total: 0, incorretos: 0 };
+                    estatisticasPorRua[r].total++;
+                    if (avaliacao.status.includes('❌')) estatisticasPorRua[r].incorretos++;
+                }
             });
 
-            // 📊 ATUALIZA OS INDICADORES (KPIs) NA TELA
-            const caixaKpis = document.getElementById('giro-kpis');
-            if (caixaKpis) {
-                caixaKpis.style.display = 'flex';
-
-                // Conta os status para exibir nos painéis
-                let oks = resultado.filter(r => r.metodologia.includes('✅') || r.metodologia.includes('📦')).length;
-                let errados = resultado.filter(r => r.metodologia.includes('❌')).length;
-                let faltantes = resultado.filter(r => r.metodologia.includes('⚠️')).length;
-
-                caixaKpis.innerHTML = `
-                    <div class="giro-kpi" style="border-left-color:#2980b9;">
-                        <div class="giro-kpi-lbl">Total de Linhas</div>
-                        <div class="giro-kpi-val">${resultado.length.toLocaleString('pt-BR')}</div>
-                        <div class="giro-kpi-sub">Estoque Atual</div>
-                    </div>
-                    <div class="giro-kpi" style="border-left-color:#27ae60;">
-                        <div class="giro-kpi-lbl">Alocação Correta</div>
-                        <div class="giro-kpi-val" style="color:#27ae60;">${oks.toLocaleString('pt-BR')}</div>
-                        <div class="giro-kpi-sub">Dentro da Regra</div>
-                    </div>
-                    <div class="giro-kpi" style="border-left-color:#c0392b;">
-                        <div class="giro-kpi-lbl">Divergentes</div>
-                        <div class="giro-kpi-val" style="color:#c0392b;">${errados.toLocaleString('pt-BR')}</div>
-                        <div class="giro-kpi-sub">Erro de Endereçamento</div>
-                    </div>
-                    <div class="giro-kpi" style="border-left-color:#f39c12;">
-                        <div class="giro-kpi-lbl">S/ Endereço</div>
-                        <div class="giro-kpi-val" style="color:#f39c12;">${faltantes.toLocaleString('pt-BR')}</div>
-                        <div class="giro-kpi-sub">Falta Picking/Reserva</div>
-                    </div>
-                `;
-            }
-
-            // ⚡ RENDERIZA TABELA COM LIMITE PARA NÃO TRAVAR O NAVEGADOR
-            if (typeof window.renderizarTabelaGiro === 'function') {
-                window.renderizarTabelaGiro(resultado.slice(0, 300)); 
-            }
+            gerarDashboardDiagnostico(relatorio, estatisticasPorRua);
 
         } catch (err) {
             alert("Erro ao processar a planilha: " + err.message);
@@ -2592,49 +2580,176 @@ window.giroImportarAlocacao = function(input) {
     reader.readAsArrayBuffer(file);
 };
 
-// 📍 REGRA DE ESTAÇÕES E TIPOS (PAVUNA)
-function definirEstacaoPavuna(endereco) {
-    if (!endereco || endereco.includes("FRAC") || endereco === "N/D") return "Sem Estação";
-
-    const partes = endereco.split('-');
-    if (partes.length < 2) return "Endereço Inválido";
-
-    const rua = parseInt(partes[0]);
-    const modulo = parseInt(partes[1]);
-
-    if (rua >= 21 && rua <= 36) {
-        let estacao = (rua <= 23) ? 1 : (rua <= 26) ? 2 : (rua <= 29) ? 3 : (rua <= 32) ? 4 : 5;
-
-        if (modulo >= 1 && modulo <= 26) return `Estação ${estacao} - Perf. (Alto)`;
-        if (modulo >= 37 && modulo <= 40) return `Estação ${estacao} - Perf. (Baixo)`;
-        if (modulo >= 41 && modulo <= 46) return `Estação ${estacao} - Medic. (Alto)`;
-        if (modulo >= 57 && modulo <= 60) return `Estação ${estacao} - Medic. (Baixo)`;
-    }
-    return "Geral / Outros";
+// 📍 FUNÇÕES DE REGRA E CRUZAMENTO (O CÉREBRO)
+function extrairEndereco(end) {
+    if (!end || end === "N/D" || end.includes("FRAC")) return null;
+    const match = end.match(/[^\d]*(\d+)[-./](\d+)/);
+    if (match) return { rua: parseInt(match[1], 10), mod: parseInt(match[2], 10) };
+    return null;
 }
 
-// 📏 REGRA MATEMÁTICA E VALIDAÇÃO DE METODOLOGIA
-function validarRegra30(pck, res) {
-    if (!pck || !res || pck === "N/D" || res === "N/D") return "⚠️ Faltando Endereço";
-
-    const numR = parseInt(res.replace(/\D/g, '').substring(0, 2));
-    const numP = parseInt(pck.replace(/\D/g, '').substring(0, 2));
-
-    if (isNaN(numR) || isNaN(numP)) return "---";
-
-    // Regra Volumoso / Controlado / Dermo (Ruas 80 a 91)
-    if (numR >= 80 && numR <= 91) {
-        return (numR - numP === 30) ? "✅ OK (Metodologia)" : "❌ Divergente";
-    }
-
-    // Regra Perfumaria / Medicamento (Ruas 21 a 36)
-    if (numR >= 21 && numR <= 36) {
-        return "📦 Validado por Estação";
-    }
-
-    return "---";
+function getClassificacaoModulo(mod) {
+    if (mod >= 1 && mod <= 26) return "Perfumaria Alto";
+    if (mod >= 37 && mod <= 40) return "Perfumaria Baixo";
+    if (mod >= 41 && mod <= 46) return "Medicamento Alto";
+    if (mod >= 57 && mod <= 60) return "Medicamento Baixo";
+    return "FORA REGRA";
 }
 
+function getEstacao(rua) {
+    if (rua >= 21 && rua <= 23) return "Estação 1";
+    if (rua >= 24 && rua <= 26) return "Estação 2";
+    if (rua >= 27 && rua <= 29) return "Estação 3";
+    if (rua >= 30 && rua <= 32) return "Estação 4";
+    if (rua >= 33 && rua <= 36) return "Estação 5";
+    return "-";
+}
+
+function avaliarCruzamento(pckStr, resStr) {
+    let pck = extrairEndereco(pckStr);
+    let res = extrairEndereco(resStr);
+
+    if (!pck || !res) return { ruaRes: "N/A", modRes: "N/A", estacao: "-", tipoExp: "-", tipoReal: "-", status: "⚠️ S/ ENDEREÇO", motivo: "Falta Picking ou Reserva" };
+
+    let estacao = getEstacao(res.rua);
+
+    // Regra: Volumoso / Controlado / Dermo (Ruas 80 a 91)
+    if (res.rua >= 80 && res.rua <= 91) {
+        let expectedPickRua = res.rua - 30;
+        let tipoReal = `Rua ${res.rua} (Volumoso/Esp)`;
+        let tipoExp = `Picking na Rua ${expectedPickRua}`;
+        
+        if (pck.rua === expectedPickRua) return { ruaRes: res.rua, modRes: res.mod, estacao, tipoExp, tipoReal, status: "✅ CORRETO", motivo: "OK" };
+        else return { ruaRes: res.rua, modRes: res.mod, estacao, tipoExp, tipoReal, status: "❌ INCORRETO", motivo: "Rua de picking divergente" };
+    }
+
+    // Regra: Perfumaria e Medicamento (Ruas 21 a 36)
+    if (res.rua >= 21 && res.rua <= 36) {
+        let tipoReal = getClassificacaoModulo(res.mod);
+        let tipoExp = getClassificacaoModulo(pck.mod); // O Picking dita o esperado
+
+        if (tipoReal === "FORA REGRA" || tipoExp === "FORA REGRA") {
+            return { ruaRes: res.rua, modRes: res.mod, estacao, tipoExp, tipoReal, status: "❌ INCORRETO", motivo: "Módulo não mapeado" };
+        }
+        if (tipoReal === tipoExp) {
+            return { ruaRes: res.rua, modRes: res.mod, estacao, tipoExp, tipoReal, status: "✅ CORRETO", motivo: "OK" };
+        } else {
+            return { ruaRes: res.rua, modRes: res.mod, estacao, tipoExp, tipoReal, status: "❌ INCORRETO", motivo: "Giro ou Tipo incorreto" };
+        }
+    }
+
+    return { ruaRes: res.rua, modRes: res.mod, estacao, tipoExp: "-", tipoReal: "-", status: "⚠️ IGNORADO", motivo: "Rua fora do escopo" };
+}
+
+// 📊 FUNÇÃO DE RENDERIZAÇÃO DO RELATÓRIO GERENCIAL
+function gerarDashboardDiagnostico(relatorio, statsRua) {
+    let container = document.getElementById('view-giro-alocacao').querySelector('.scroll-content');
+    
+    // Calcula KPIs
+    let total = relatorio.length;
+    let corretos = relatorio.filter(r => r.status.includes('✅')).length;
+    let incorretos = relatorio.filter(r => r.status.includes('❌')).length;
+
+    // Transforma o Objeto de Estatísticas em Array para ordenar (Ranking)
+    let rankingArray = Object.keys(statsRua).map(rua => {
+        let t = statsRua[rua].total;
+        let e = statsRua[rua].incorretos;
+        return { rua: rua, total: t, erros: e, perc: (t > 0) ? ((e/t)*100).toFixed(1) : 0 };
+    });
+    rankingArray.sort((a, b) => b.perc - a.perc); // Ordena pelas piores ruas primeiro
+
+    // Monta HTML do Ranking
+    let htmlRanking = rankingArray.map(r => `
+        <tr style="border-bottom:1px solid #eee; background:${r.perc > 30 ? '#fdedec' : '#fff'};">
+            <td style="padding:10px; font-weight:bold;">Rua ${r.rua}</td>
+            <td style="padding:10px;">${r.total}</td>
+            <td style="padding:10px; color:#c0392b; font-weight:bold;">${r.erros}</td>
+            <td style="padding:10px; font-weight:bold; color:${r.perc > 30 ? '#c0392b' : '#333'};">${r.perc}%</td>
+        </tr>
+    `).join('');
+
+    // Monta HTML do Detalhamento (Apenas os erros, limitado a 300 para não travar)
+    let apenasErros = relatorio.filter(r => r.status.includes('❌')).slice(0, 300);
+    let htmlErros = apenasErros.map(r => `
+        <tr style="border-bottom:1px solid #eee; font-size:12px;">
+            <td style="padding:8px;">${r.produto}</td>
+            <td style="padding:8px;">${r.descricao.substring(0, 25)}...</td>
+            <td style="padding:8px;">${r.estacao}</td>
+            <td style="padding:8px; font-weight:bold;">${r.ruaReserva}</td>
+            <td style="padding:8px; font-weight:bold;">${r.moduloReserva}</td>
+            <td style="padding:8px; color:#2980b9;">${r.tipoEsperado}</td>
+            <td style="padding:8px; color:#c0392b;">${r.tipoReal}</td>
+            <td style="padding:8px;">${r.motivo}</td>
+        </tr>
+    `).join('');
+
+    // Injeta na Tela
+    let htmlFinal = `
+        <div style="display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:200px; background:#fff; padding:15px; border-radius:8px; border-left:5px solid #2980b9; box-shadow:0 2px 5px rgba(0,0,0,0.05);">
+                <div style="font-size:12px; color:#666;">Total Lidos</div>
+                <div style="font-size:24px; font-weight:bold;">${total.toLocaleString()}</div>
+            </div>
+            <div style="flex:1; min-width:200px; background:#fff; padding:15px; border-radius:8px; border-left:5px solid #27ae60; box-shadow:0 2px 5px rgba(0,0,0,0.05);">
+                <div style="font-size:12px; color:#666;">Alocação Correta</div>
+                <div style="font-size:24px; font-weight:bold; color:#27ae60;">${corretos.toLocaleString()}</div>
+            </div>
+            <div style="flex:1; min-width:200px; background:#fff; padding:15px; border-radius:8px; border-left:5px solid #c0392b; box-shadow:0 2px 5px rgba(0,0,0,0.05);">
+                <div style="font-size:12px; color:#666;">Divergentes</div>
+                <div style="font-size:24px; font-weight:bold; color:#c0392b;">${incorretos.toLocaleString()}</div>
+            </div>
+        </div>
+
+        <div style="display:flex; gap:20px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:300px; background:#fff; padding:15px; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.1); align-self:flex-start;">
+                <h4 style="margin-top:0; color:#c0392b;"><i class="fas fa-exclamation-triangle"></i> Ranking de Erros por Rua</h4>
+                <table style="width:100%; border-collapse:collapse; text-align:left;">
+                    <tr style="background:#f8f9fa; font-size:13px; border-bottom:2px solid #ddd;">
+                        <th style="padding:10px;">Rua</th>
+                        <th style="padding:10px;">Total</th>
+                        <th style="padding:10px;">Incorretos</th>
+                        <th style="padding:10px;">% Erro</th>
+                    </tr>
+                    ${htmlRanking}
+                </table>
+            </div>
+
+            <div style="flex:2; min-width:400px; background:#fff; padding:15px; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.1);">
+                <h4 style="margin-top:0; color:#2980b9;"><i class="fas fa-list"></i> Detalhamento (Ação Corretiva)</h4>
+                <p style="font-size:12px; color:#666; margin-top:-10px;">Mostrando divergências onde Giro Real difere do Giro Esperado.</p>
+                <div style="overflow-x:auto; max-height:500px; overflow-y:auto;">
+                    <table style="width:100%; border-collapse:collapse; text-align:left; min-width:700px;">
+                        <tr style="background:#f8f9fa; font-size:12px; border-bottom:2px solid #ddd; position:sticky; top:0;">
+                            <th style="padding:8px;">Produto</th>
+                            <th style="padding:8px;">Descrição</th>
+                            <th style="padding:8px;">Estação</th>
+                            <th style="padding:8px;">Rua</th>
+                            <th style="padding:8px;">Módulo</th>
+                            <th style="padding:8px;">Esperado (Via Picking)</th>
+                            <th style="padding:8px;">Real (Alocado)</th>
+                            <th style="padding:8px;">Motivo</th>
+                        </tr>
+                        ${htmlErros}
+                    </table>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Localiza uma div para injetar o relatório (cria se não existir)
+    let areaRelatorio = document.getElementById('area-relatorio-avancado');
+    if (!areaRelatorio) {
+        areaRelatorio = document.createElement('div');
+        areaRelatorio.id = 'area-relatorio-avancado';
+        container.appendChild(areaRelatorio);
+    }
+    
+    // Esconde a tabela antiga/inútil e desenha o painel gerencial
+    if(document.getElementById('giro-table-container')) document.getElementById('giro-table-container').style.display = 'none';
+    if(document.getElementById('giro-kpis')) document.getElementById('giro-kpis').style.display = 'none';
+    
+    areaRelatorio.innerHTML = htmlFinal;
+}
 // =========================================================
 // 🛡️ ESCUDO ANTI-TRAVAMENTO DO FIREBASE (80k LINHAS)
 // =========================================================
