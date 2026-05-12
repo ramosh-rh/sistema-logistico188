@@ -182,6 +182,61 @@ window.renderFerias = function () {
     const tb=document.getElementById('tbFerias'); if(!tb)return;
     const lista=_getLista(); if(!lista.length)return;
     tb.innerHTML='';
+
+    // ── Injeta CSS de animação de alerta (uma única vez) ──────────────────
+    if (!document.getElementById('style-alerta-ferias')) {
+        const styleEl = document.createElement('style');
+        styleEl.id = 'style-alerta-ferias';
+        styleEl.textContent = `
+            @keyframes pulseFerias {
+                0%   { box-shadow: 0 0 0 0 rgba(231,76,60,0.7); opacity:1; }
+                50%  { box-shadow: 0 0 0 8px rgba(231,76,60,0); opacity:0.85; }
+                100% { box-shadow: 0 0 0 0 rgba(231,76,60,0); opacity:1; }
+            }
+            @keyframes pulseRowFerias {
+                0%,100% { background: linear-gradient(90deg,#fff5f5,#fff0e6) !important; }
+                50%     { background: linear-gradient(90deg,#fde8e8,#fde8d0) !important; }
+            }
+            .badge-alerta-ferias {
+                animation: pulseFerias 1.2s ease-in-out infinite !important;
+            }
+        `;
+        document.head.appendChild(styleEl);
+    }
+
+    // ── Verifica quantos colaboradores estão no alerta de ≤60 dias ───────
+    const hoje_check = new Date(); hoje_check.setHours(0,0,0,0);
+    let qtdAlerta60 = 0;
+    const nomesAlerta = [];
+    lista.forEach(r => {
+        const mat  = r['Matrícula']||r['Matricula']||r['MATRICULA']||r['matricula']||'-';
+        const nome = r['Nome']||r['NOME']||r['nome']||'-';
+        const bs   = (r['Status']||r['STATUS']||r['status']||'-').toUpperCase();
+        const sm_  = (window.rhData[mat]||{}).statusManual||'AUTO';
+        if (nome==='-'||bs==='INATIVO'||sm_==='INATIVO'||sm_==='TRANSFERENCIA DE TURNO') return;
+        ensureRhData(mat);
+        const rh_  = window.rhData[mat];
+        const hasM_= (rh_.feriasInicio && rh_.feriasFim);
+        if (!hasM_ && rh_.limiteFerias) {
+            const lim_ = new Date(rh_.limiteFerias+'T00:00:00');
+            const d_   = Math.floor((lim_ - hoje_check) / 86400000);
+            if (d_ >= 0 && d_ <= 60) { qtdAlerta60++; nomesAlerta.push({nome, mat, d: d_}); }
+        }
+    });
+
+    // ── Banner de alerta no topo ───────────────────────────────────────
+    const tableParent = tb.parentElement;
+    const existingBanner = document.getElementById('banner-alerta-ferias');
+    if (existingBanner) existingBanner.remove();
+    if (qtdAlerta60 > 0 && tableParent) {
+        const nomesList = nomesAlerta.map(x=>`<strong>${x.nome}</strong> (${x.d}d restantes)`).join(', ');
+        const bannerDiv = document.createElement('div');
+        bannerDiv.id = 'banner-alerta-ferias';
+        bannerDiv.style.cssText = 'display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,#e74c3c,#e67e22);color:white;padding:12px 18px;border-radius:8px;margin-bottom:10px;box-shadow:0 4px 15px rgba(231,76,60,0.35);animation:pulseRowFerias 2s ease-in-out infinite;';
+        bannerDiv.innerHTML = `<span style="font-size:26px;flex-shrink:0;">🔔</span><div><strong style="font-size:13px;">ATENÇÃO — ${qtdAlerta60} colaborador(es) com férias vencendo em até 60 dias SEM marcação!</strong><br><span style="font-size:11px;opacity:0.93;">Marque as férias agora para evitar passivo trabalhista: ${nomesList}</span></div>`;
+        tableParent.insertBefore(bannerDiv, tableParent.firstChild);
+    }
+
     lista.forEach(r=>{
         const mat=r['Matrícula']||r['Matricula']||r['MATRICULA']||r['matricula']||'-';
         const nome=r['Nome']||r['NOME']||r['nome']||'-';
@@ -190,14 +245,54 @@ window.renderFerias = function () {
         const rh=window.rhData[mat];
         const sm=rh.statusManual||'AUTO', bs=(r['Status']||r['STATUS']||r['status']||'-').toUpperCase();
         if(nome==='-'||(bs==='INATIVO'&&sm!=='ATIVO')||sm==='INATIVO'||sm==='TRANSFERENCIA DE TURNO')return;
-        let badge='<span style="background:#3498db;color:white;padding:3px 6px;border-radius:4px;font-weight:bold;">AQUISITIVO</span>';
+        // ── Cálculo de alerta de 60 dias sem férias marcadas ─────────────
+        const today_fer = new Date(); today_fer.setHours(0,0,0,0);
         const dtI=rh.feriasInicio||'',dtF=rh.feriasFim||'',hasM=(dtI&&dtF);
+        let diasParaVencer = null;
+        let alerta60 = false; // true quando ≤60 dias para o limite e sem férias marcadas
+        if (rh.limiteFerias) {
+            const lim60 = new Date(rh.limiteFerias+'T00:00:00');
+            diasParaVencer = Math.floor((lim60 - today_fer) / 86400000);
+            // Alerta somente se NÃO tem férias marcadas e falta ≤60 dias (e ainda não venceu)
+            if (!hasM && diasParaVencer >= 0 && diasParaVencer <= 60) alerta60 = true;
+        }
+
+        let badge='<span style="background:#3498db;color:white;padding:3px 6px;border-radius:4px;font-weight:bold;">AQUISITIVO</span>';
         if(hasM){const today=new Date();today.setHours(0,0,0,0);const dI=new Date(dtI+'T00:00:00'),dF=new Date(dtF+'T00:00:00');if(today>=dI&&today<=dF)badge='<span style="background:#8e44ad;color:white;padding:3px 6px;border-radius:4px;font-weight:bold;">EM FÉRIAS</span>';else if(dI>today)badge='<span style="background:#f1c40f;color:#333;padding:3px 6px;border-radius:4px;font-weight:bold;">MARCADA</span>';else badge='<span style="background:#7f8c8d;color:white;padding:3px 6px;border-radius:4px;font-weight:bold;">GOZADAS</span>';}
-        else if(rh.limiteFerias){const today=new Date();today.setHours(0,0,0,0);const lim=new Date(rh.limiteFerias+'T00:00:00'),d=Math.floor((lim-today)/86400000);if(d<0)badge='<span style="background:#c0392b;color:white;padding:3px 6px;border-radius:4px;font-weight:bold;">VENCIDA</span>';else if(d<=90)badge='<span style="background:#f39c12;color:white;padding:3px 6px;border-radius:4px;font-weight:bold;">VENCENDO</span>';else badge='<span style="background:#27ae60;color:white;padding:3px 6px;border-radius:4px;font-weight:bold;">NO PRAZO</span>';}
+        else if(rh.limiteFerias){
+            const today=new Date();today.setHours(0,0,0,0);
+            const lim=new Date(rh.limiteFerias+'T00:00:00'),d=Math.floor((lim-today)/86400000);
+            if(d<0) {
+                badge='<span style="background:#c0392b;color:white;padding:3px 6px;border-radius:4px;font-weight:bold;">VENCIDA</span>';
+            } else if(alerta60) {
+                // ⚠️ ALERTA: ≤60 dias para vencer sem marcação — badge pulsante vermelho-laranja
+                badge=`<span class="badge-alerta-ferias" style="background:linear-gradient(135deg,#e74c3c,#e67e22);color:white;padding:4px 8px;border-radius:4px;font-weight:900;font-size:10px;animation:pulseFerias 1.2s ease-in-out infinite;display:inline-flex;align-items:center;gap:4px;box-shadow:0 0 0 0 rgba(231,76,60,0.7);">🔔 MARCAR JÁ! ${diasParaVencer}d</span>`;
+            } else if(d<=90) {
+                badge='<span style="background:#f39c12;color:white;padding:3px 6px;border-radius:4px;font-weight:bold;">VENCENDO</span>';
+            } else {
+                badge='<span style="background:#27ae60;color:white;padding:3px 6px;border-radius:4px;font-weight:bold;">NO PRAZO</span>';
+            }
+        }
         let limDisp='-';
-        if(rh.limiteFerias){const ls=rh.limiteFerias.split('-').reverse().join('/');const today=new Date();today.setHours(0,0,0,0);limDisp=new Date(rh.limiteFerias+'T00:00:00')<today&&!hasM?`<strong style="color:#c0392b;font-size:12px;">${ls}</strong>`:`<strong style="color:var(--dark);font-size:12px;">${ls}</strong>`;}
+        if(rh.limiteFerias){
+            const ls=rh.limiteFerias.split('-').reverse().join('/');
+            const today=new Date();today.setHours(0,0,0,0);
+            const limVenc=new Date(rh.limiteFerias+'T00:00:00')<today&&!hasM;
+            if(alerta60) {
+                // Destaca a data limite em vermelho pulsante quando no alerta
+                limDisp=`<strong style="color:#e74c3c;font-size:12px;animation:pulseFerias 1.2s ease-in-out infinite;">${ls}</strong>`;
+            } else {
+                limDisp=limVenc?`<strong style="color:#c0392b;font-size:12px;">${ls}</strong>`:`<strong style="color:var(--dark);font-size:12px;">${ls}</strong>`;
+            }
+        }
         const pAberto=rh.periodoAberto?`<strong style="color:var(--blue);font-size:11px;">${rh.periodoAberto}</strong>`:'<span style="color:#ccc;">-</span>';
-        tb.innerHTML+=`<tr><td style="font-weight:bold;font-size:12px;">${mat}</td><td style="text-align:left;font-size:12px;">${nome}</td><td style="font-size:11px;color:#555;">${adm}</td><td>${pAberto}</td><td>${limDisp}</td><td>${badge}</td><td><input type="date" value="${dtI}" onchange="updateRHData('${mat}','feriasInicio',this.value,this);window.renderRHQuad();window.renderFerias();" style="padding:4px;border:1px solid #ccc;border-radius:4px;font-size:10px;"></td><td><input type="date" value="${dtF}" onchange="updateRHData('${mat}','feriasFim',this.value,this);window.renderRHQuad();window.renderFerias();" style="padding:4px;border:1px solid #ccc;border-radius:4px;font-size:10px;"></td><td><label style="cursor:pointer;font-weight:800;color:var(--orange);font-size:10px;display:flex;align-items:center;gap:5px;justify-content:center;"><input type="checkbox" ${rh.vendeu10Dias?'checked':''} onchange="updateRHData('${mat}','vendeu10Dias',this.checked,this)"> Vendeu 10 Dias</label></td><td><button class="btn-sm" style="background:#25D366;color:white;padding:5px;border-radius:20px;" onclick="sendWhatsAppLink('${mat}','${nome}')"><i class="fab fa-whatsapp"></i></button></td></tr>`;
+
+        // Estilo da linha: vermelho-laranja pulsante quando alertando
+        const trStyle = alerta60
+            ? `style="background:linear-gradient(90deg,#fff5f5,#fff0e6);border-left:4px solid #e74c3c;animation:pulseRowFerias 2s ease-in-out infinite;"`
+            : `style=""`;
+
+        tb.innerHTML+=`<tr ${trStyle}><td style="font-weight:bold;font-size:12px;">${mat}</td><td style="text-align:left;font-size:12px;font-weight:${alerta60?'800':'600'};color:${alerta60?'#c0392b':'inherit'};">${alerta60?'🔔 ':''} ${nome}</td><td style="font-size:11px;color:#555;">${adm}</td><td>${pAberto}</td><td>${limDisp}</td><td>${badge}</td><td><input type="date" value="${dtI}" onchange="updateRHData('${mat}','feriasInicio',this.value,this);window.renderRHQuad();window.renderFerias();" style="padding:4px;border:1px solid #ccc;border-radius:4px;font-size:10px;"></td><td><input type="date" value="${dtF}" onchange="updateRHData('${mat}','feriasFim',this.value,this);window.renderRHQuad();window.renderFerias();" style="padding:4px;border:1px solid #ccc;border-radius:4px;font-size:10px;"></td><td><label style="cursor:pointer;font-weight:800;color:var(--orange);font-size:10px;display:flex;align-items:center;gap:5px;justify-content:center;"><input type="checkbox" ${rh.vendeu10Dias?'checked':''} onchange="updateRHData('${mat}','vendeu10Dias',this.checked,this)"> Vendeu 10 Dias</label></td><td><button class="btn-sm" style="background:#25D366;color:white;padding:5px;border-radius:20px;" onclick="sendWhatsAppLink('${mat}','${nome}')"><i class="fab fa-whatsapp"></i></button></td></tr>`;
     });
 };
 // =========================================================================
